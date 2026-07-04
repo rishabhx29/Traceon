@@ -1,3 +1,10 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import Image from 'next/image';
+import { useSession, signOut } from 'next-auth/react';
+import { Session } from 'next-auth';
+import { Camera, Save, Lock, User, Github, BarChart3, Trash2, AlertTriangle, Link as LinkIcon, FileCode, Calendar, Sun, Moon } from 'lucide-react';
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -25,6 +32,175 @@ interface ProfileStats {
 }
 
 export default function ProfileForm({ session }: { session: Session }) {
+    const { update } = useSession();
+
+    // State for general info
+    const [name, setName] = useState(session?.user?.name || '');
+    const [imagePreview, setImagePreview] = useState<string | null>(session?.user?.image || null);
+    const [base64Image, setBase64Image] = useState<string | null>(null);
+
+    // State for security
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+
+    // State for GitHub linking
+    const [githubUsername, setGithubUsername] = useState('');
+    const [isLinkingGH, setIsLinkingGH] = useState(false);
+
+    // State for Theme toggling
+    const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+    useEffect(() => {
+        if (typeof document !== 'undefined') {
+            const currentTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+            setTheme(currentTheme);
+        }
+
+        const handleThemeChange = () => {
+            const nextTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+            setTheme(nextTheme);
+        };
+        window.addEventListener('traceon-theme-change', handleThemeChange);
+        window.addEventListener('storage', handleThemeChange);
+
+        return () => {
+            window.removeEventListener('traceon-theme-change', handleThemeChange);
+            window.removeEventListener('storage', handleThemeChange);
+        };
+    }, []);
+
+    const handleThemeSelect = (selectedTheme: 'dark' | 'light') => {
+        document.documentElement.dataset.theme = selectedTheme;
+        document.documentElement.classList.toggle('dark', selectedTheme === 'dark');
+        document.documentElement.classList.toggle('light', selectedTheme === 'light');
+        window.localStorage.setItem('traceon-theme', selectedTheme);
+        setTheme(selectedTheme);
+        window.dispatchEvent(new Event('traceon-theme-change'));
+    };
+
+    // State for stats
+    const [stats, setStats] = useState<ProfileStats | null>(null);
+    const [statsLoading, setStatsLoading] = useState(true);
+
+    // State for danger zone
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    // State for submission
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Fetch profile data (stats + githubUsername)
+    useEffect(() => {
+        const fetchProfile = async () => {
+            try {
+                const res = await fetch('/api/user/profile');
+                if (res.ok) {
+                    const data = await res.json();
+                    setStats(data.stats);
+                    if (data.user.githubUsername) {
+                        setGithubUsername(data.user.githubUsername);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch profile:', err);
+            } finally {
+                setStatsLoading(false);
+            }
+        };
+        fetchProfile();
+    }, []);
+
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 5 * 1024 * 1024) {
+            setError('Image must be less than 5MB');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64String = reader.result as string;
+            setBase64Image(base64String);
+            setImagePreview(base64String);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        setSuccess(null);
+
+        const payload: Record<string, string> = {};
+
+        if (name !== session?.user?.name) payload.name = name;
+        if (base64Image) payload.image = base64Image;
+        if (currentPassword && newPassword) {
+            payload.currentPassword = currentPassword;
+            payload.newPassword = newPassword;
+        }
+
+        if (Object.keys(payload).length === 0) {
+            setLoading(false);
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/user/profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to update profile');
+            }
+
+            await update({
+                name: data.user.name,
+                image: data.user.image,
+            });
+
+            setSuccess('Profile updated successfully!');
+            setCurrentPassword('');
+            setNewPassword('');
+            setBase64Image(null);
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'An error occurred');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLinkGitHub = async () => {
+        if (!githubUsername.trim()) return;
+        setIsLinkingGH(true);
+        setError(null);
+        setSuccess(null);
+
+        try {
+            const res = await fetch('/api/user/profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ githubUsername: githubUsername.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed to link GitHub');
+            setSuccess('GitHub username linked successfully!');
+        } catch (err: unknown) {
+            setError(err instanceof Error ? err.message : 'Failed to link GitHub');
+        } finally {
+            setIsLinkingGH(false);
   const { update } = useSession();
 
   // State for general info
@@ -341,6 +517,123 @@ export default function ProfileForm({ session }: { session: Session }) {
                 {stats.totalFilesScanned.toLocaleString()}
               </p>
             </div>
+
+            {/* ─── Theme Customization ─── */}
+            <div className="card p-6 border-stroke">
+                <div className="flex items-center gap-2 mb-6">
+                    <Sun className="w-5 h-5 text-emerald" />
+                    <h2 className="text-xl font-mono text-text-0">Theme Customization</h2>
+                </div>
+                <p className="text-sm text-text-2 mb-6 leading-relaxed">
+                    Personalize your interface. Toggle between a high-contrast dark palette or a clean, focused light style.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+                    {/* Dark Option */}
+                    <button
+                        type="button"
+                        onClick={() => handleThemeSelect('dark')}
+                        className={`flex flex-col items-start p-4 rounded-xl border transition-all duration-300 text-left cursor-pointer group bg-surface-1 ${
+                            theme === 'dark'
+                                ? 'border-emerald bg-emerald/[0.02] shadow-[0_0_15px_-3px_rgba(16,185,129,0.1)]'
+                                : 'border-stroke hover:border-text-3 hover:bg-surface-2'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between w-full mb-3">
+                            <div className="flex items-center gap-2">
+                                <div className={`p-1.5 rounded-lg border transition-colors ${
+                                    theme === 'dark' ? 'bg-emerald/10 border-emerald/20 text-emerald' : 'bg-surface-2 border-stroke text-text-2 group-hover:text-text-0'
+                                }`}>
+                                    <Moon className="w-4 h-4" />
+                                </div>
+                                <span className="text-sm font-mono font-bold text-text-0">Obsidian Dark</span>
+                            </div>
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
+                                theme === 'dark' ? 'border-emerald bg-emerald' : 'border-stroke bg-transparent'
+                            }`}>
+                                {theme === 'dark' && <span className="w-1.5 h-1.5 rounded-full bg-surface-0" />}
+                            </div>
+                        </div>
+                        {/* Custom visual preview mockup for dark mode */}
+                        <div className="w-full h-20 rounded bg-surface-0 border border-stroke p-2 flex flex-col gap-1.5 overflow-hidden select-none opacity-80 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center justify-between border-b border-stroke pb-1">
+                                <div className="flex gap-1">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-rose/60" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-amber/60" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald/60" />
+                                </div>
+                                <div className="w-8 h-2 rounded bg-surface-2" />
+                            </div>
+                            <div className="flex gap-2 items-start mt-1">
+                                <div className="w-1/3 h-10 rounded bg-surface-2 border border-stroke flex items-center justify-center">
+                                    <div className="w-4 h-1 rounded bg-emerald/50" />
+                                </div>
+                                <div className="flex-1 flex flex-col gap-1.5">
+                                    <div className="w-full h-2 rounded bg-surface-2" />
+                                    <div className="w-5/6 h-2 rounded bg-surface-2" />
+                                    <div className="w-2/3 h-2 rounded bg-surface-2" />
+                                </div>
+                            </div>
+                        </div>
+                    </button>
+
+                    {/* Light Option */}
+                    <button
+                        type="button"
+                        onClick={() => handleThemeSelect('light')}
+                        className={`flex flex-col items-start p-4 rounded-xl border transition-all duration-300 text-left cursor-pointer group bg-surface-1 ${
+                            theme === 'light'
+                                ? 'border-emerald bg-emerald/[0.01] shadow-[0_0_15px_-3px_rgba(16,185,129,0.08)]'
+                                : 'border-stroke hover:border-text-3 hover:bg-surface-2'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between w-full mb-3">
+                            <div className="flex items-center gap-2">
+                                <div className={`p-1.5 rounded-lg border transition-colors ${
+                                    theme === 'light' ? 'bg-emerald/10 border-emerald/20 text-emerald' : 'bg-surface-2 border-stroke text-text-2 group-hover:text-text-0'
+                                }`}>
+                                    <Sun className="w-4 h-4" />
+                                </div>
+                                <span className="text-sm font-mono font-bold text-text-0">Quartz Light</span>
+                            </div>
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
+                                theme === 'light' ? 'border-emerald bg-emerald' : 'border-stroke bg-transparent'
+                            }`}>
+                                {theme === 'light' && <span className="w-1.5 h-1.5 rounded-full bg-surface-0" />}
+                            </div>
+                        </div>
+                        {/* Custom visual preview mockup for light mode */}
+                        <div className="w-full h-20 rounded bg-white border border-slate-200 p-2 flex flex-col gap-1.5 overflow-hidden select-none opacity-80 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-1">
+                                <div className="flex gap-1">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-rose/60" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-amber/60" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald/60" />
+                                </div>
+                                <div className="w-8 h-2 rounded bg-slate-100" />
+                            </div>
+                            <div className="flex gap-2 items-start mt-1">
+                                <div className="w-1/3 h-10 rounded bg-slate-50 border border-slate-200 flex items-center justify-center">
+                                    <div className="w-4 h-1 rounded bg-emerald/50" />
+                                </div>
+                                <div className="flex-1 flex flex-col gap-1.5">
+                                    <div className="w-full h-2 rounded bg-slate-100" />
+                                    <div className="w-5/6 h-2 rounded bg-slate-100" />
+                                    <div className="w-2/3 h-2 rounded bg-slate-100" />
+                                </div>
+                            </div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            {/* ─── Danger Zone ─── */}
+            <div className="card p-6 border-2 border-rose/20 bg-rose/[0.02]">
+                <div className="flex items-center gap-2 mb-4">
+                    <AlertTriangle className="w-5 h-5 text-rose" />
+                    <h2 className="text-xl font-mono text-rose">Danger Zone</h2>
+                </div>
+                <p className="text-sm text-text-2 leading-relaxed mb-4">
+                    Permanently delete your account and all associated data, including all repositories and analysis results. <strong className="text-rose">This action cannot be undone.</strong>
             <div className="p-4 rounded-xl bg-surface-1 border border-stroke">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4 text-text-2" />
