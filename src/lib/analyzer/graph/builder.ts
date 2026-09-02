@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { IFile } from '@/lib/db/models/File';
 import { IGraphNode, IGraphEdge, IMetrics } from '@/lib/db/models/AnalysisResult';
-import type { PackageInfo, WorkspaceInfo } from '@/lib/analyzer/workspace';
+import type { WorkspaceInfo } from '@/lib/analyzer/workspace';
+import { getCriticalModuleIds } from '@/lib/analyzer/graph/importance';
 
 export function determineNodeType(filePath: string): IGraphNode['type'] | 'type' {
     const name = path.basename(filePath).toLowerCase();
@@ -12,8 +13,9 @@ export function determineNodeType(filePath: string): IGraphNode['type'] | 'type'
         name === 'page.tsx' || name === 'page.jsx' || name === 'page.js' ||
         name === 'layout.tsx' || name === 'layout.jsx' || name === 'layout.js' ||
         name === 'route.ts' || name === 'route.js' ||
-        name === 'template.tsx' || name.startsWith('app.') || name === 'index.tsx' ||
-        name === 'main.tsx' || name === 'main.ts' || name === 'index.ts' || name === 'server.ts'
+        name === 'template.tsx' || name.startsWith('app.') || name === 'main.tsx' ||
+        name === 'main.ts' || name === 'server.ts' || name === 'server.js' ||
+        (name.startsWith('index.') && !fullPath.includes('/components/') && !fullPath.includes('/lib/') && !fullPath.includes('/utils/') && !fullPath.includes('/types/'))
     ) {
         return 'entry';
     }
@@ -30,7 +32,7 @@ export function determineNodeType(filePath: string): IGraphNode['type'] | 'type'
     if (
         fullPath.includes('/types/') || fullPath.includes('/interfaces/') || name.endsWith('.d.ts') || name.includes('types.ts')
     ) {
-        return 'type' as any; // Using 'any' since interface IGraphNode['type'] might not literally allow 'type' yet, but frontend handles fallback types.
+        return 'type';
     }
 
     // 4. Utilities / Lib
@@ -59,17 +61,11 @@ export function resolveImportPath(
     pathsMatcher?: ((id: string, basePath?: string) => string[] | null) | null,
     repoPath?: string
 ): string | null {
-    // Return null if obvious external library (e.g. 'react', 'lodash')
-    // We allow absolute-looking imports (like 'components/Button') to pass down for fallback checks
-    if (!rawImport.startsWith('.') && !rawImport.startsWith('/') && !rawImport.startsWith('@/') && !rawImport.startsWith('~/')) {
-        // It might be external, OR it might be an absolute path from baseUrl like 'src/components/...'
-    }
-
     // Strip out suffix loaders (e.g. import logo from './logo.svg?url')
     let cleanImport = rawImport.split('?')[0];
 
     // Strip out extensions inside the import string to normalize attempts
-    cleanImport = cleanImport.replace(/\.(ts|tsx|js|jsx)$/, '');
+    cleanImport = cleanImport.replace(/\.(ts|tsx|js|jsx|mjs|cjs)$/, '');
 
     const dir = path.dirname(importerPath);
     const attemptPaths: string[] = [];
@@ -108,11 +104,9 @@ export function resolveImportPath(
             // Relative imports
             attemptPaths.push(path.join(dir, cleanImport).replace(/\\/g, '/'));
         } else {
-            // Looks like 'utils/math', external module 'lodash', or an implicit relative like 'style.css'
-            attemptPaths.push(cleanImport);
-            attemptPaths.push(path.join(dir, cleanImport).replace(/\\/g, '/')); // Implicit relative
-            attemptPaths.push(`src/${cleanImport}`);
-            attemptPaths.push(`lib/${cleanImport}`);
+            // A bare specifier is external unless tsconfig/workspace resolution
+            // proved otherwise. Guessing a src/ path produces false graph edges.
+            return null;
         }
     }
 
@@ -125,11 +119,15 @@ export function resolveImportPath(
         candidates.add(`${baseAttempt}.tsx`);
         candidates.add(`${baseAttempt}.js`);
         candidates.add(`${baseAttempt}.jsx`);
+        candidates.add(`${baseAttempt}.mjs`);
+        candidates.add(`${baseAttempt}.cjs`);
         candidates.add(`${baseAttempt}.d.ts`);
         candidates.add(`${baseAttempt}/index.ts`);
         candidates.add(`${baseAttempt}/index.tsx`);
         candidates.add(`${baseAttempt}/index.js`);
         candidates.add(`${baseAttempt}/index.jsx`);
+        candidates.add(`${baseAttempt}/index.mjs`);
+        candidates.add(`${baseAttempt}/index.cjs`);
         candidates.add(`${baseAttempt}.json`);
         candidates.add(`${baseAttempt}.css`); // For style imports
         candidates.add(`${baseAttempt}.scss`);
@@ -137,6 +135,15 @@ export function resolveImportPath(
         candidates.add(`${baseAttempt}.svelte`);
         candidates.add(`${baseAttempt}.astro`);
         candidates.add(`${baseAttempt}.svg`);
+        candidates.add(`${baseAttempt}.py`);
+        candidates.add(`${baseAttempt}.go`);
+        candidates.add(`${baseAttempt}.java`);
+        candidates.add(`${baseAttempt}.kt`);
+        candidates.add(`${baseAttempt}.rs`);
+        candidates.add(`${baseAttempt}.rb`);
+        candidates.add(`${baseAttempt}.php`);
+        candidates.add(`${baseAttempt}.cs`);
+        candidates.add(`${baseAttempt}.swift`);
     }
 
     for (const attempt of candidates) {
@@ -145,8 +152,8 @@ export function resolveImportPath(
         }
     }
 
-    // Final fallback: If we still haven't found it, do a fuzzy search against all existing keys across the repo.
-    // E.g. raw import '@core/utils/math' might map exactly to 'packages/core/src/utils/math.ts'
+    // A suffix match is safe only when it has exactly one candidate. Choosing the
+    // first match made duplicate filenames connect to unrelated files.
     if (cleanImport.length > 2) {
         const fuzzyTarget = cleanImport.startsWith('@/') || cleanImport.startsWith('~/')
             ? cleanImport.substring(2)
@@ -157,7 +164,7 @@ export function resolveImportPath(
         const hasPathChars = fuzzyTarget.includes('/');
 
         if (!isExternalLike || hasPathChars) {
-            // Look for the end of the paths
+            const matches: string[] = [];
             for (const [existingPath] of existingFiles.entries()) {
                 // Strip extension from existing path for matching
                 const existingNoExt = existingPath.replace(/\.[^/.]+$/, "");
@@ -169,9 +176,10 @@ export function resolveImportPath(
                     existingNoExt.endsWith(`/${fuzzyTarget}`) ||
                     existingPath.endsWith(`/${fuzzyTarget}`)
                 ) {
-                    return existingPath;
+                    matches.push(existingPath);
                 }
             }
+            if (matches.length === 1) return matches[0];
         }
     }
 
@@ -259,15 +267,8 @@ export function calculateGraph(
 
     const nodes = Array.from(nodesMap.values());
 
-    // 3. Identify Critical Modules (Top 5% files by inDegree + outDegree)
-    const sortedByImpact = [...nodes].sort((a, b) => {
-        const scoreA = a.inDegree * 2 + a.outDegree;
-        const scoreB = b.inDegree * 2 + b.outDegree;
-        return scoreB - scoreA; // Descending
-    });
-
-    const criticalCount = Math.max(1, Math.ceil(nodes.length * 0.05));
-    const criticalModules = sortedByImpact.slice(0, criticalCount).map(n => n.id);
+    // Only mark modules with observed entry-point or dependency evidence.
+    const criticalModules = getCriticalModuleIds(nodes, edges);
 
     // 4. File Type Distribution
     const distribution: Record<string, number> = {};

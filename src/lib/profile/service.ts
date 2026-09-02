@@ -28,7 +28,7 @@ export async function getOrAnalyzeProfile(username: string, forceRefresh: boolea
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const cachedAnalysis = await ProfileAnalysis.findOne({
             username,
-            schemaVersion: 2, // Only accept v2 (CURISM) cached data
+            schemaVersion: 3,
             lastAnalyzedAt: { $gte: twentyFourHoursAgo }
         });
 
@@ -75,16 +75,21 @@ export async function getOrAnalyzeProfile(username: string, forceRefresh: boolea
         followers: githubData.user.followers,
         filteredRepos: githubData.filteredRepos,
         totalPRsOpened: githubData.pullRequestActivity.totalPRsOpened,
+        totalPRsMerged: githubData.pullRequestActivity.totalPRsMerged,
         externalPRsMerged: githubData.pullRequestActivity.externalPRsMerged,
         prReviewsDone: githubData.pullRequestActivity.prReviewsDone,
         externalIssues: githubData.issueActivity.externalIssues,
+        totalIssuesOpened: githubData.issueActivity.totalOpened,
         activeDaysLastYear: githubData.commitFrequency.activeDaysLastYear,
         orgsCount: githubData.orgsCount,
         readmeSnippets: githubData.readmeSnippets,
     });
 
     // ─── 4. Compute Master Score & Grade ───
-    const masterScore = computeMasterScoreData(curismScores);
+    const masterScore = computeMasterScoreData(
+        curismScores,
+        githubData.repoQualitySignals.some(signal => signal.qualityObserved && !signal.treeTruncated),
+    );
 
     console.log(`[Profile Service] CURISM Scores for ${username}:`, {
         ...curismScores,
@@ -106,7 +111,7 @@ export async function getOrAnalyzeProfile(username: string, forceRefresh: boolea
         console.error(`[Profile Service] AI analysis failed for ${username}, using fallback:`, e);
         // The analyzer has its own fallback, but if the entire call throws, use a minimal fallback
         const topLangs = Object.entries(githubData.languageBytes)
-            .sort((a, b) => b[1] - a[1])
+            .sort(([aLanguage, aBytes], [bLanguage, bBytes]) => bBytes - aBytes || aLanguage.localeCompare(bLanguage))
             .slice(0, 3)
             .map(([lang]) => lang);
 
@@ -138,7 +143,7 @@ export async function getOrAnalyzeProfile(username: string, forceRefresh: boolea
 
     const payloadToSave = {
         username,
-        schemaVersion: 2,
+        schemaVersion: 3,
         avatarUrl: githubData.user.avatar_url,
         bio: githubData.user.bio,
         techStack: githubData.languageBytes,
@@ -153,6 +158,7 @@ export async function getOrAnalyzeProfile(username: string, forceRefresh: boolea
             softSkills: masterScore.softSkills,
             builderSkills: masterScore.builderSkills,
             percentile: masterScore.percentile,
+            assessmentAvailable: masterScore.assessmentAvailable,
         },
         // AI qualitative assessment
         aiAssessment: {

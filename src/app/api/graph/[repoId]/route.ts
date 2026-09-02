@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db/connection';
 import AnalysisResult from '@/lib/db/models/AnalysisResult';
 import Repository from '@/lib/db/models/Repository';
+import { getCriticalModuleIds } from '@/lib/analyzer/graph/importance';
 
 export async function GET(
     req: Request,
@@ -44,13 +45,18 @@ export async function GET(
             }, { status: 404 });
         }
 
+        const metrics = {
+            ...analysis.metrics,
+            criticalModules: getCriticalModuleIds(analysis.nodes ?? [], analysis.edges ?? []),
+        };
+
         return NextResponse.json({
             success: true,
             status: repo.status,
             data: {
                 nodes: analysis.nodes,
                 edges: analysis.edges,
-                metrics: analysis.metrics,
+                metrics,
                 history: analysis.history
             }
         }, { status: 200 });

@@ -3,6 +3,7 @@ import dbConnect from '@/lib/db/connection';
 import AnalysisResult from '@/lib/db/models/AnalysisResult';
 import Repository from '@/lib/db/models/Repository';
 import { analyzeImpact, generateFullImpactReport } from '@/lib/analyzer/graph/impact';
+import { getCriticalModuleIds } from '@/lib/analyzer/graph/importance';
 
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
@@ -37,8 +38,10 @@ export async function GET(
             return NextResponse.json({ message: 'Analysis data not found' }, { status: 404 });
         }
 
-        const { nodes, edges, metrics } = analysis;
-        const criticalModules = metrics?.criticalModules || [];
+        // Legacy or partial analysis documents may not have nodes/edges stored.
+        const nodes = analysis.nodes ?? [];
+        const edges = analysis.edges ?? [];
+        const criticalModules = getCriticalModuleIds(nodes, edges);
 
         if (nodeId) {
             // Single node impact analysis

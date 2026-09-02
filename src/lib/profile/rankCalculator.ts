@@ -61,10 +61,22 @@ export function getPercentile(score: number): number {
  *   Builder_Skills = Uniqueness (ACID)
  *   Final_Score   = (Hard × 0.30) + (Soft × 0.40) + (Builder × 0.30)
  */
-export function computeMasterScoreData(scores: CURISMScores): MasterScoreData {
+export function computeMasterScoreData(scores: CURISMScores, hasRepositoryEvidence: boolean = true): MasterScoreData {
   const hardSkills = (scores.reliability + scores.security + scores.maintainability) / 3;
   const softSkills = (scores.influence + scores.contribution) / 2;
   const builderSkills = scores.uniqueness;
+
+  if (!hasRepositoryEvidence) {
+    return {
+      finalScore: 0,
+      grade: 'N/A',
+      gradeTitle: 'Insufficient public repository evidence',
+      hardSkills: 0,
+      softSkills: Math.round(softSkills * 10) / 10,
+      builderSkills: 0,
+      assessmentAvailable: false,
+    };
+  }
 
   const finalScore = computeFinalScore(hardSkills, softSkills, builderSkills);
   const { grade, title } = getGrade(finalScore);
@@ -78,6 +90,7 @@ export function computeMasterScoreData(scores: CURISMScores): MasterScoreData {
     softSkills: Math.round(softSkills * 10) / 10,
     builderSkills: Math.round(builderSkills * 10) / 10,
     percentile,
+    assessmentAvailable: true,
   };
 }
 

@@ -46,6 +46,22 @@ export function parseFileContent(content: string, fileName: string): ParseResult
         return result;
     }
 
+    if (fileName.endsWith('.py')) {
+        for (const match of content.matchAll(/^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))/gm)) {
+            result.imports.push((match[1] || match[2]).replace(/\./g, '/'));
+        }
+        for (const match of content.matchAll(/^\s*def\s+(\w+)/gm)) result.functions.push(match[1]);
+        for (const match of content.matchAll(/^\s*class\s+(\w+)/gm)) result.classes.push(match[1]);
+        return result;
+    }
+
+    if (fileName.endsWith('.go')) {
+        for (const match of content.matchAll(/(?:import\s+|^\s*)(?:\(\s*)?\s*"([^"]+)"/gm)) result.imports.push(match[1]);
+        for (const match of content.matchAll(/^\s*func\s+(?:\([^)]*\)\s*)?(\w+)/gm)) result.functions.push(match[1]);
+        for (const match of content.matchAll(/^\s*type\s+(\w+)\s+struct/gm)) result.classes.push(match[1]);
+        return result;
+    }
+
     let parseContent = content;
 
     // For Single File Components (Vue, Svelte), extract the <script> blocks 
@@ -83,7 +99,11 @@ export function parseFileContent(content: string, fileName: string): ParseResult
         parseContent,
         ts.ScriptTarget.Latest,
         true, // setParentNodes
-        fileName.endsWith('.tsx') || fileName.endsWith('.jsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+        fileName.endsWith('.tsx') || fileName.endsWith('.jsx')
+            ? ts.ScriptKind.TSX
+            : /\.(?:js|mjs|cjs)$/.test(fileName)
+                ? ts.ScriptKind.JS
+                : ts.ScriptKind.TS
     );
 
     // Traversal function

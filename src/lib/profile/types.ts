@@ -33,7 +33,7 @@ export interface ACIDBreakdown {
 
 // ─── Master Score & Grade ───
 
-export type DeveloperGrade = 'C' | 'B' | 'A' | 'S' | 'S+';
+export type DeveloperGrade = 'N/A' | 'C' | 'B' | 'A' | 'S' | 'S+';
 
 export interface MasterScoreData {
   finalScore: number;       // 0–10
@@ -43,6 +43,7 @@ export interface MasterScoreData {
   softSkills: number;       // avg(I, C)
   builderSkills: number;    // U (ACID)
   percentile?: number;
+  assessmentAvailable: boolean;
 }
 
 // ─── Repo Filtering & Weighting ───
@@ -63,6 +64,8 @@ export interface FilteredRepo {
   archived: boolean;
   html_url: string;
   open_issues_count: number;
+  has_wiki: boolean;
+  default_branch: string;
   // Computed weights
   recencyWeight: number;
   complexityWeight: number;
@@ -71,8 +74,10 @@ export interface FilteredRepo {
 }
 
 export interface RepoQualitySignal {
-  repoName: string;
-  hasTests: boolean;
+    repoName: string;
+    qualityObserved: boolean;
+    treeTruncated: boolean;
+    hasTests: boolean;
   hasCI: boolean;
   hasDockerfile: boolean;
   hasContributing: boolean;
@@ -80,8 +85,11 @@ export interface RepoQualitySignal {
   hasChangelog: boolean;
   hasPrettierOrLint: boolean;
   hasGitignore: boolean;
-  hasEnvExample: boolean;
-  hasEnvCommitted: boolean;
+    hasEnvExample: boolean;
+    hasEnvCommitted: boolean;
+    hasDependencyManifest: boolean;
+    hasLockfile: boolean;
+    hasSecurityPolicy: boolean;
   openIssueCount: number;
   dependencyCount: number;
   lastCommitDate: string;
@@ -208,7 +216,7 @@ export const ACIDBreakdownSchema = z.object({
   documentation: z.number(),
 });
 
-export const DeveloperGradeSchema = z.enum(['C', 'B', 'A', 'S', 'S+']);
+export const DeveloperGradeSchema = z.enum(['N/A', 'C', 'B', 'A', 'S', 'S+']);
 
 export const MasterScoreDataSchema = z.object({
   finalScore: z.number(),
@@ -218,6 +226,7 @@ export const MasterScoreDataSchema = z.object({
   softSkills: z.number(),
   builderSkills: z.number(),
   percentile: z.number().optional(),
+  assessmentAvailable: z.boolean().default(true),
 });
 
 export const EngineeringDNASchema = z.object({

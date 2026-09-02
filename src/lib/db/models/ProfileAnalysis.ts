@@ -10,7 +10,7 @@ const profileAnalysisSchema = new mongoose.Schema({
     },
     schemaVersion: {
         type: Number,
-        default: 2,
+        default: 3,
         index: true,
     },
     avatarUrl: {
@@ -48,12 +48,13 @@ const profileAnalysisSchema = new mongoose.Schema({
     // ─── Master Score & Grade ───
     masterScore: {
         finalScore: { type: Number, required: true },
-        grade: { type: String, enum: ['C', 'B', 'A', 'S', 'S+'], required: true },
+        grade: { type: String, enum: ['N/A', 'C', 'B', 'A', 'S', 'S+'], required: true },
         gradeTitle: { type: String, required: true },
         hardSkills: { type: Number, required: true },
         softSkills: { type: Number, required: true },
         builderSkills: { type: Number, required: true },
         percentile: { type: Number },
+        assessmentAvailable: { type: Boolean, default: true },
     },
 
     // ─── AI Qualitative Assessment ───

@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import dbConnect from '@/lib/db/connection';
 import Repository from '@/lib/db/models/Repository';
 import AnalysisResult from '@/lib/db/models/AnalysisResult';
+import { getCriticalModuleIds } from '@/lib/analyzer/graph/importance';
+import type { IGraphEdge, IGraphNode } from '@/lib/db/models/AnalysisResult';
 
 export async function GET() {
     try {
@@ -24,6 +26,24 @@ export async function GET() {
         // Fetch all analysis results for these repos
         const analyses = await AnalysisResult.find({ repositoryId: { $in: repoIds } }).lean();
 
+        // rankImportantNodes is O(V·(V+E)) per call. Repositories analyzed with the
+        // current pipeline (analysisVersion 2) already store the same deterministic
+        // result in metrics.criticalModules, so only legacy documents are recomputed.
+        const analysisVersionByRepo = new Map(
+            repos.map((repo) => [repo._id.toString(), repo.analysisVersion ?? 1])
+        );
+        const criticalModulesByRepo = new Map<string, string[]>();
+        const criticalModulesFor = (analysis: { repositoryId: { toString(): string }; nodes?: IGraphNode[]; edges?: IGraphEdge[]; metrics?: { criticalModules?: string[] } | null }): string[] => {
+            const key = analysis.repositoryId.toString();
+            let modules = criticalModulesByRepo.get(key);
+            if (!modules) {
+                const stored = analysisVersionByRepo.get(key) === 2 ? analysis.metrics?.criticalModules : undefined;
+                modules = stored ?? getCriticalModuleIds(analysis.nodes ?? [], analysis.edges ?? []);
+                criticalModulesByRepo.set(key, modules);
+            }
+            return modules;
+        };
+
         // Aggregate metrics
         let totalFiles = 0;
         let totalDependencies = 0;
@@ -35,10 +55,11 @@ export async function GET() {
         const densities: number[] = [];
 
         for (const analysis of analyses) {
+            const criticalModules = criticalModulesFor(analysis);
             if (analysis.metrics) {
                 totalFiles += analysis.metrics.totalFiles || 0;
                 totalDependencies += analysis.metrics.totalDependencies || 0;
-                totalCriticalModules += (analysis.metrics.criticalModules || []).length;
+                totalCriticalModules += criticalModules.length;
                 totalCircularDeps += (analysis.metrics.circularDependencies || []).length;
                 densities.push(analysis.metrics.dependencyDensity || 0);
 
@@ -48,7 +69,7 @@ export async function GET() {
                     fileTypeAgg[ext] = (fileTypeAgg[ext] || 0) + (count as number);
                 }
 
-                allCriticalModules.push(...(analysis.metrics.criticalModules || []));
+                allCriticalModules.push(...criticalModules);
             }
 
             // Sum LOC
@@ -77,7 +98,7 @@ export async function GET() {
                     totalFiles: analysis.metrics.totalFiles,
                     totalDependencies: analysis.metrics.totalDependencies,
                     dependencyDensity: analysis.metrics.dependencyDensity,
-                    criticalCount: (analysis.metrics.criticalModules || []).length,
+                    criticalCount: analysis?.metrics ? criticalModulesFor(analysis).length : 0,
                     circularCount: (analysis.metrics.circularDependencies || []).length,
                 } : null,
             };

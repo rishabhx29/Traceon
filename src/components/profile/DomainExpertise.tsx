@@ -2,8 +2,8 @@
 'use client';
 
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
-import { Target, Award, TrendingUp, Shield, Zap } from 'lucide-react';
-import { CURISMScores, CURISMDescriptions, MasterScoreData } from '@/lib/profile/types';
+import { Target, TrendingUp, Shield, Zap } from 'lucide-react';
+import { CURISMScores, MasterScoreData } from '@/lib/profile/types';
 
 interface TooltipItem {
     payload: {
@@ -76,6 +76,18 @@ export function DomainExpertise({ curismScores, curismDescriptions, masterScore 
                 <h3 className="text-sm font-bold text-text-0 font-mono">CURISM Engine Loading</h3>
                 <p className="text-xs text-text-3 font-mono mt-2 max-w-[250px]">
                     This profile requires a re-scan with the new CURISM scoring algorithm.
+                </p>
+            </div>
+        );
+    }
+
+    if (masterScore?.assessmentAvailable === false) {
+        return (
+            <div className="card w-full h-[400px] p-6 flex flex-col justify-center items-center text-center !rounded-sm shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)] bg-surface-1">
+                <Target className="w-8 h-8 text-amber mb-4 opacity-70" />
+                <h3 className="text-sm font-bold text-text-0 font-mono">Repository Evidence Unavailable</h3>
+                <p className="text-xs text-text-3 font-mono mt-2 max-w-[300px]">
+                    We could not inspect enough public repository files to score engineering practices. This is not a beginner or failed result.
                 </p>
             </div>
         );

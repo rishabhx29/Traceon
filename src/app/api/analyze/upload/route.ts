@@ -82,6 +82,7 @@ export async function POST(req: Request) {
             name: cleanName,
             owner: 'uploaded-zip',
             status: 'pending',
+            analysisVersion: 2,
             sessionId,
         });
 

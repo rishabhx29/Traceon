@@ -5,6 +5,7 @@ import { createGroq } from '@ai-sdk/groq';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import connectDB from '@/lib/db/connection';
 import AnalysisResult from '@/lib/db/models/AnalysisResult';
+import { getCriticalModuleIds } from '@/lib/analyzer/graph/importance';
 
 // Active providers
 const cerebras = createOpenAI({
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
         // 1. Fetch Repository Architecture Context
         await connectDB();
         const analysis = await AnalysisResult.findOne({ repositoryId: repoId })
-            .select('metrics nodes')
+            .select('metrics nodes edges')
             .lean();
 
         let systemPrompt = `You are Traceon AI, an expert software architecture assistant.\n`;
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
         if (analysis) {
             // Provide context about the codebase
             const nodeCount = analysis.nodes?.length || 0;
-            const criticalNodes = analysis.metrics?.criticalModules?.slice(0, 10).join(', ') || 'None identified';
+            const criticalNodes = getCriticalModuleIds(analysis.nodes || [], analysis.edges || []).slice(0, 10).join(', ') || 'None identified';
 
             systemPrompt += `\nRepository Context:\n`;
             systemPrompt += `- Total Files Parsed: ${analysis.metrics?.totalFiles || nodeCount}\n`;

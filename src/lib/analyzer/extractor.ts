@@ -28,7 +28,7 @@ function getMatcherForFile(filePath: string, matcherCache: Map<string, ((id: str
 export async function extractGraphData(repoId: string, repoPath: string) {
     const scannedFiles = await scanDirectory(repoPath);
 
-    const PARSING_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.vue', '.svelte', '.html', '.css', '.scss', '.astro']);
+    const PARSING_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.vue', '.svelte', '.html', '.css', '.scss', '.astro', '.py', '.go']);
 
     const filesToProcess = scannedFiles.filter(f => PARSING_EXTENSIONS.has(f.extension)).map(f => ({
         ...f,

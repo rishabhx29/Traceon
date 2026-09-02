@@ -18,6 +18,8 @@ interface RawGitHubRepo {
   archived: boolean;
   html_url: string;
   open_issues_count: number;
+  has_wiki: boolean;
+  default_branch: string;
   owner: { login: string };
 }
 
@@ -29,16 +31,9 @@ function passesInclusionCriteria(repo: RawGitHubRepo): boolean {
   // Exclude forks — not original work
   if (repo.fork) return false;
 
-  // Exclude near-empty repos (<50KB)
-  if (repo.size < 50) return false;
-
-  // Exclude repos not pushed to in 4+ years
-  const fourYearsAgo = new Date();
-  fourYearsAgo.setFullYear(fourYearsAgo.getFullYear() - 4);
-  if (new Date(repo.pushed_at) < fourYearsAgo) return false;
-
-  // Exclude pure markdown / config repos (no primary language)
-  if (!repo.language) return false;
+  // Keep small, old, and language-less repositories in the evidence set. A
+  // maintained CLI, configuration project, or mature library can be valuable.
+  if (repo.size <= 0 && !repo.description && (!repo.topics || repo.topics.length === 0)) return false;
 
   return true;
 }
@@ -47,8 +42,8 @@ function passesInclusionCriteria(repo: RawGitHubRepo): boolean {
  * §10.1 — Recency Weighting
  * Recent repos carry more weight in scoring.
  */
-function computeRecencyWeight(createdAt: string): number {
-  const monthsOld = monthsSince(createdAt);
+function computeRecencyWeight(pushedAt: string): number {
+  const monthsOld = monthsSince(pushedAt);
 
   if (monthsOld < 6) return 1.0;
   if (monthsOld < 12) return 0.85;
@@ -73,13 +68,11 @@ function computeComplexityWeight(repoSizeKB: number): number {
  * §11.2 — Quality Signals for Inclusion Weight
  * Boost weight for repos with quality indicators.
  */
-function computeQualityBoost(repo: RawGitHubRepo, hasReadme: boolean, hasLicense: boolean): number {
+function computeQualityBoost(repo: RawGitHubRepo): number {
   let boost = 1.0;
 
   if (repo.stargazers_count > 5) boost *= 1.3;
   if (repo.forks_count > 2) boost *= 1.2;
-  if (hasReadme) boost *= 1.1;
-  if (hasLicense) boost *= 1.05;
   if (repo.topics && repo.topics.length > 0) boost *= 1.05;
 
   return boost;
@@ -91,17 +84,13 @@ function computeQualityBoost(repo: RawGitHubRepo, hasReadme: boolean, hasLicense
  */
 export function filterAndWeightRepos(
   repos: RawGitHubRepo[],
-  readmePresence: Set<string>,
-  licensePresence: Set<string>
 ): FilteredRepo[] {
   return repos
     .filter(passesInclusionCriteria)
     .map(repo => {
-      const hasReadme = readmePresence.has(repo.name);
-      const hasLicense = licensePresence.has(repo.name);
-      const recencyWeight = computeRecencyWeight(repo.created_at);
+      const recencyWeight = computeRecencyWeight(repo.pushed_at);
       const complexityWeight = computeComplexityWeight(repo.size);
-      const qualityBoost = computeQualityBoost(repo, hasReadme, hasLicense);
+      const qualityBoost = computeQualityBoost(repo);
 
       return {
         name: repo.name,
@@ -119,6 +108,8 @@ export function filterAndWeightRepos(
         archived: repo.archived,
         html_url: repo.html_url,
         open_issues_count: repo.open_issues_count,
+        has_wiki: repo.has_wiki,
+        default_branch: repo.default_branch,
         recencyWeight,
         complexityWeight,
         qualityBoost,
@@ -126,7 +117,7 @@ export function filterAndWeightRepos(
       };
     })
     // Sort by combined weight descending — best repos first
-    .sort((a, b) => b.combinedWeight - a.combinedWeight);
+    .sort((a, b) => b.combinedWeight - a.combinedWeight || b.pushed_at.localeCompare(a.pushed_at) || b.stargazers_count - a.stargazers_count || a.name.localeCompare(b.name));
 }
 
 /**

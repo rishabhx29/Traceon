@@ -1,4 +1,3 @@
-import fs from 'fs/promises';
 import path from 'path';
 import fg from 'fast-glob';
 
@@ -22,7 +21,7 @@ export async function scanDirectory(
         // Find all code-like files, ignoring standard massive directories
         const entries = await fg(
             [
-                '**/*.{js,jsx,ts,tsx,json,md,css,scss,mjs,cjs,html,vue,svelte,astro,svg}',
+                '**/*.{js,jsx,ts,tsx,json,md,css,scss,mjs,cjs,html,vue,svelte,astro,svg,py,go,java,kt,kts,rs,rb,php,cs,swift}',
                 '**/.env*'
             ],
             {
@@ -46,7 +45,7 @@ export async function scanDirectory(
             }
         );
 
-        for (const entry of entries) {
+        for (const entry of entries.sort((a, b) => a.path.localeCompare(b.path))) {
             const relativePath = path.relative(basePath, entry.path).replace(/\\/g, '/');
             results.push({
                 path: relativePath,

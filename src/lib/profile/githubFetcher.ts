@@ -1,13 +1,6 @@
-// src/lib/profile/githubFetcher.ts
-// Enhanced GitHub data fetcher for CURISM scoring framework
-// Collects all signals needed by the deterministic scoring engine
-
-// Add these imports to the top of the file
-import { UserNotFoundError, GitHubRateLimitError } from "@/lib/errors";
-import type { RepoQualitySignal, FilteredRepo } from "./types";
-import { filterAndWeightRepos } from "./repoFilter";
-
-// ─── Type Definitions ───
+import { UserNotFoundError, GitHubRateLimitError } from '@/lib/errors';
+import type { FilteredRepo, RepoQualitySignal } from './types';
+import { filterAndWeightRepos } from './repoFilter';
 
 export interface GitHubUser {
   login: string;
@@ -37,6 +30,7 @@ export interface GitHubRepo {
   archived: boolean;
   open_issues_count: number;
   has_wiki: boolean;
+  default_branch: string;
 }
 
 export interface CommitSample {
@@ -47,214 +41,133 @@ export interface CommitSample {
 
 export interface EnrichedProfileData {
   user: GitHubUser;
-  // Filtered & weighted repos (post §11 filtering)
   filteredRepos: FilteredRepo[];
-  // All repos (unfiltered, for total star/fork counts)
   allRepos: GitHubRepo[];
   languageBytes: Record<string, number>;
   recentCommits: CommitSample[];
   readmeSnippets: Record<string, string>;
-  commitFrequency: {
-    last30Days: number;
-    last90Days: number;
-    last365Days: number;
-    activeDaysLastYear: number;
-  };
-  pullRequestActivity: {
-    totalPRsOpened: number;
-    totalPRsMerged: number; // REAL: from search API with is:merged
-    externalPRsMerged: number; // PRs merged into repos NOT owned by user
-    prReviewsDone: number; // REAL: from reviewed-by search
-  };
-  issueActivity: {
-    totalOpened: number;
-    externalIssues: number; // Issues filed in repos NOT owned by user
-  };
+  commitFrequency: { last30Days: number; last90Days: number; last365Days: number; activeDaysLastYear: number };
+  pullRequestActivity: { totalPRsOpened: number; totalPRsMerged: number; externalPRsMerged: number; prReviewsDone: number };
+  issueActivity: { totalOpened: number; externalIssues: number };
   repoQualitySignals: RepoQualitySignal[];
-  accountAge: {
-    years: number;
-    months: number;
-  };
+  accountAge: { years: number; months: number };
   totalStarsReceived: number;
   totalForksReceived: number;
   orgsCount: number;
 }
 
-// ─── GitHub API Headers ───
-
-const getHeaders = () => {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github.v3+json",
-    "User-Agent": "traceon-analyzer",
-  };
-  if (process.env.GITHUB_TOKEN) {
-    headers["Authorization"] = `token ${process.env.GITHUB_TOKEN}`;
-  }
-  return headers;
-};
-
-// ─── Utility: chunk array for parallel processing ───
-
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  return Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
-    arr.slice(i * size, i * size + size),
-  );
+interface TreeEntry { path: string; type: 'blob' | 'tree'; size?: number }
+interface RepositoryTree { entries: TreeEntry[]; truncated: boolean }
+interface TreeSignals {
+  qualityObserved: boolean;
+  treeTruncated: boolean;
+  hasTests: boolean;
+  hasCI: boolean;
+  hasDockerfile: boolean;
+  hasContributing: boolean;
+  hasLicense: boolean;
+  hasChangelog: boolean;
+  hasPrettierOrLint: boolean;
+  hasGitignore: boolean;
+  hasEnvExample: boolean;
+  hasEnvCommitted: boolean;
+  hasDependencyManifest: boolean;
+  hasLockfile: boolean;
+  hasSecurityPolicy: boolean;
+  hasApiDocs: boolean;
+  fileCount: number;
+  directoryDepth: number;
+  hasModularStructure: boolean;
+  readmePath?: string;
+}
+interface RepoAnalysis {
+  repoName: string;
+  languages: Record<string, number>;
+  commits: CommitSample[];
+  readmeSnippet?: string;
+  qualitySignal: RepoQualitySignal;
 }
 
-// ─── Utility: safe fetch with timeout ───
+const getHeaders = (): Record<string, string> => ({
+  Accept: 'application/vnd.github+json',
+  'User-Agent': 'traceon-analyzer',
+  'X-GitHub-Api-Version': '2022-11-28',
+  ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+});
 
-async function safeFetch(
-  url: string,
-  headers: Record<string, string>,
-): Promise<Response | null> {
+function chunkArray<T>(items: T[], size: number): T[][] {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, index * size + size));
+}
+
+async function safeFetch(url: string, headers: Record<string, string>): Promise<Response | null> {
   try {
-    const response = await fetch(url, {
-      headers,
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!response.ok) return null;
-    return response;
+    const response = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
+    return response.ok ? response : null;
   } catch {
     return null;
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-// MAIN FETCHER
-// ═══════════════════════════════════════════════════════════
-
-export async function fetchGitHubProfileData(
-  username: string,
-): Promise<EnrichedProfileData> {
+export async function fetchGitHubProfileData(username: string): Promise<EnrichedProfileData> {
   const headers = getHeaders();
-
-  // ─── 1. Fetch User Data ───
-  const userRes = await fetch(`https://api.github.com/users/${username}`, {
-    headers,
-  });
-  if (!userRes.ok) {
-    if (userRes.status === 404) {
-      throw new UserNotFoundError(`User ${username} not found on GitHub`);
+  const userResponse = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, { headers, signal: AbortSignal.timeout(10_000) });
+  if (!userResponse.ok) {
+    if (userResponse.status === 404) throw new UserNotFoundError(`User ${username} not found on GitHub`);
+    if (userResponse.status === 403 || userResponse.status === 429) {
+      const reset = userResponse.headers.get('x-ratelimit-reset');
+      throw new GitHubRateLimitError(`GitHub API rate limit exceeded for user ${username}`, reset ? new Date(Number(reset) * 1000) : undefined);
     }
-    if (userRes.status === 403 || userRes.status === 429) {
-      // Extract rate limit reset time from headers
-      const resetTimeHeader = userRes.headers.get("x-ratelimit-reset");
-      const resetTime = resetTimeHeader
-        ? new Date(parseInt(resetTimeHeader) * 1000)
-        : undefined;
-      throw new GitHubRateLimitError(
-        `GitHub API rate limit exceeded for user ${username}`,
-        resetTime,
-      );
-    }
-    throw new Error(`Failed to fetch user: ${userRes.statusText}`);
+    throw new Error(`Failed to fetch user: ${userResponse.statusText}`);
   }
+  const user = await userResponse.json() as GitHubUser;
 
-  const user: GitHubUser = await userRes.json();
-
-  // ─── 2. Fetch All Repositories (paginated) ───
   const allRepos: GitHubRepo[] = [];
-  let page = 1;
-  while (page <= 3) {
-    // Max 300 repos (3 pages × 100)
-    const reposRes = await fetch(
-      `https://api.github.com/users/${username}/repos?per_page=100&sort=pushed&page=${page}`,
-      { headers },
-    );
-    if (!reposRes.ok) break;
-    const pageRepos: GitHubRepo[] = await reposRes.json();
-    if (pageRepos.length === 0) break;
-    allRepos.push(...pageRepos);
-    if (pageRepos.length < 100) break;
-    page++;
+  for (let page = 1; page <= 3; page += 1) {
+    const response = await safeFetch(`https://api.github.com/users/${encodeURIComponent(username)}/repos?per_page=100&sort=pushed&page=${page}`, headers);
+    if (!response) break;
+    const repos = await response.json() as GitHubRepo[];
+    allRepos.push(...repos);
+    if (repos.length < 100) break;
   }
 
-  // ─── 3. Fetch Organizations Count ───
-  let orgsCount = 0;
-  try {
-    const orgsRes = await safeFetch(
-      `https://api.github.com/users/${username}/orgs`,
-      headers,
-    );
-    if (orgsRes) {
-      const orgs = await orgsRes.json();
-      orgsCount = Array.isArray(orgs) ? orgs.length : 0;
-    }
-  } catch {
-    // Non-critical
-  }
-
-  // ─── 4. Detect README/License presence for filtering ───
-  // Quick check on first 50 non-fork repos
-  const nonForkRepos = allRepos.filter((r) => !r.fork).slice(0, 50);
-  const readmePresence = new Set<string>();
-  const licensePresence = new Set<string>();
-
-  // We'll detect these during deep analysis, so pre-populate from what we can get cheaply
-  // (the filter function only uses these as boost signals, not as hard requirements)
-  for (const repo of nonForkRepos.slice(0, 20)) {
-    readmePresence.add(repo.name); // Assume most repos have READMEs; we'll verify in deep analysis
-  }
-
-  // ─── 5. Apply §11 Repo Filtering ───
-  const filteredRepos = filterAndWeightRepos(
-    allRepos as any,
-    readmePresence,
-    licensePresence,
-  );
-
-  // ─── 6. Deep Analysis on Top Repos ───
-  const deepAnalysisRepos = filteredRepos.slice(0, 15); // Analyze top 15 weighted repos
+  const orgResponse = await safeFetch(`https://api.github.com/users/${encodeURIComponent(username)}/orgs?per_page=100`, headers);
+  const orgs = orgResponse ? await orgResponse.json() as unknown[] : [];
+  const filteredRepos = filterAndWeightRepos(allRepos);
+  const deepRepos = filteredRepos.slice(0, 12);
   const languageBytes: Record<string, number> = {};
   const recentCommits: CommitSample[] = [];
   const readmeSnippets: Record<string, string> = {};
   const repoQualitySignals: RepoQualitySignal[] = [];
 
-  const repoChunks = chunkArray(deepAnalysisRepos, 5);
+  for (const chunk of chunkArray(deepRepos, 4)) {
+    const results = await Promise.all(chunk.map(async repo => {
+      try {
+        return await analyzeRepo(repo, headers, deepRepos.indexOf(repo));
+      } catch (error) {
+        console.warn(`[Traceon] Failed deep analysis for repo ${repo.name}:`, error);
+        return null;
+      }
+    }));
 
-  for (const chunk of repoChunks) {
-    await Promise.all(
-      chunk.map(async (repo) => {
-        try {
-          await analyzeRepo(
-            repo,
-            username,
-            headers,
-            languageBytes,
-            recentCommits,
-            readmeSnippets,
-            repoQualitySignals,
-            deepAnalysisRepos,
-          );
-        } catch (error) {
-          console.warn(
-            `[Traceon] Failed deep analysis for repo ${repo.name}:`,
-            error,
-          );
-        }
-      }),
-    );
+    for (const result of results.filter((item): item is RepoAnalysis => item !== null).sort((a, b) => a.repoName.localeCompare(b.repoName))) {
+      for (const [language, bytes] of Object.entries(result.languages)) {
+        languageBytes[language] = (languageBytes[language] || 0) + bytes;
+      }
+      recentCommits.push(...result.commits);
+      if (result.readmeSnippet) readmeSnippets[result.repoName] = result.readmeSnippet;
+      repoQualitySignals.push(result.qualitySignal);
+    }
   }
 
-  // ─── 7. Activity & Collaboration (REAL data from Search API) ───
-  const prActivity = await fetchPRActivity(username, headers);
-  const issueData = await fetchIssueActivity(username, headers);
-  const commitFreq = await fetchCommitFrequency(username, headers);
-
-  // ─── 8. Aggregate Stats ───
-  const totalStarsReceived = allRepos.reduce(
-    (sum, r) => sum + (r.stargazers_count || 0),
-    0,
-  );
-  const totalForksReceived = allRepos.reduce(
-    (sum, r) => sum + (r.forks_count || 0),
-    0,
-  );
-
-  const createdAt = new Date(user.created_at);
-  const diffMonths =
-    (new Date().getFullYear() - createdAt.getFullYear()) * 12 +
-    (new Date().getMonth() - createdAt.getMonth());
+  repoQualitySignals.sort((a, b) => a.repoName.localeCompare(b.repoName));
+  recentCommits.sort((a, b) => a.repoName.localeCompare(b.repoName) || b.date.localeCompare(a.date) || a.message.localeCompare(b.message));
+  const [pullRequestActivity, issueActivity, commitFrequency] = await Promise.all([
+    fetchPRActivity(username, headers),
+    fetchIssueActivity(username, headers),
+    fetchCommitFrequency(username, headers),
+  ]);
+  const accountCreated = new Date(user.created_at);
+  const accountMonths = Math.max(0, (new Date().getFullYear() - accountCreated.getFullYear()) * 12 + new Date().getMonth() - accountCreated.getMonth());
 
   return {
     user,
@@ -263,551 +176,210 @@ export async function fetchGitHubProfileData(
     languageBytes,
     recentCommits,
     readmeSnippets,
-    commitFrequency: commitFreq,
-    pullRequestActivity: prActivity,
-    issueActivity: issueData,
+    commitFrequency,
+    pullRequestActivity,
+    issueActivity,
     repoQualitySignals,
-    accountAge: {
-      years: Math.floor(diffMonths / 12),
-      months: diffMonths % 12,
-    },
-    totalStarsReceived,
-    totalForksReceived,
-    orgsCount,
+    accountAge: { years: Math.floor(accountMonths / 12), months: accountMonths % 12 },
+    totalStarsReceived: allRepos.reduce((sum, repo) => sum + (repo.stargazers_count || 0), 0),
+    totalForksReceived: allRepos.reduce((sum, repo) => sum + (repo.forks_count || 0), 0),
+    orgsCount: Array.isArray(orgs) ? orgs.length : 0,
   };
 }
 
-// ═══════════════════════════════════════════════════════════
-// DEEP REPO ANALYSIS
-// ═══════════════════════════════════════════════════════════
-
-async function analyzeRepo(
-  repo: FilteredRepo,
-  username: string,
-  headers: Record<string, string>,
-  languageBytes: Record<string, number>,
-  recentCommits: CommitSample[],
-  readmeSnippets: Record<string, string>,
-  repoQualitySignals: RepoQualitySignal[],
-  allDeepRepos: FilteredRepo[],
-) {
-  // ─── Languages ───
-  const repoLanguages: Record<string, number> = {};
-  const langRes = await safeFetch(
-    `https://api.github.com/repos/${repo.owner}/${repo.name}/languages`,
-    headers,
-  );
-  if (langRes) {
-    const langs: Record<string, number> = await langRes.json();
-    for (const [lang, bytes] of Object.entries(langs)) {
-      languageBytes[lang] = (languageBytes[lang] || 0) + bytes;
-      repoLanguages[lang] = bytes;
-    }
-  }
-
-  // ─── Commits (for commit message quality) ───
-  const commitsRes = await safeFetch(
-    `https://api.github.com/repos/${repo.owner}/${repo.name}/commits?author=${username}&per_page=5`,
-    headers,
-  );
-  if (commitsRes) {
-    const commits = await commitsRes.json();
-    if (Array.isArray(commits)) {
-      commits.forEach((c: any) => {
-        if (c.commit?.message) {
-          recentCommits.push({
-            repoName: repo.name,
-            message: c.commit.message,
-            date: c.commit.author?.date || "",
-          });
-        }
-      });
-    }
-  }
-
-  // ─── Contents API (quality signals) ───
-  const contentsRes = await safeFetch(
-    `https://api.github.com/repos/${repo.owner}/${repo.name}/contents`,
-    headers,
-  );
-
-  let hasTests = false,
-    hasCI = false,
-    hasDockerfile = false;
-  let hasContributing = false,
-    hasLicense = false,
-    hasChangelog = false;
-  let hasPrettierOrLint = false,
-    hasGitignore = false;
-  let hasEnvExample = false,
-    hasEnvCommitted = false;
-  let dependencyCount = 0;
-  let readmeWordCount = 0;
-  let readmeHasInstallInstructions = false;
-  let readmeHasUsageExamples = false;
-  let readmeHasScreenshots = false;
-  let hasApiDocs = false;
-  let fileCount = 0;
-  let directoryDepth = 0;
-  let hasModularStructure = false;
-  let totalLOC = 0;
-
-  if (contentsRes) {
-    const contents = await contentsRes.json();
-    if (Array.isArray(contents)) {
-      const fileNames = contents.map((f: any) => f.name.toLowerCase());
-      const dirNames = contents
-        .filter((f: any) => f.type === "dir")
-        .map((f: any) => f.name.toLowerCase());
-      fileCount = contents.length;
-
-      // Test detection
-      hasTests = fileNames.some(
-        (f) =>
-          f.includes("test") ||
-          f.includes("spec") ||
-          f.includes("__tests__") ||
-          f === "jest.config.js" ||
-          f === "jest.config.ts" ||
-          f === "vitest.config.ts" ||
-          f === "pytest.ini" ||
-          f === ".pytest_cache",
-      );
-
-      // CI/CD detection
-      hasCI = fileNames.some(
-        (f) =>
-          f === ".github" ||
-          f === ".circleci" ||
-          f === ".travis.yml" ||
-          f === "jenkinsfile" ||
-          f === ".gitlab-ci.yml",
-      );
-
-      // Docker
-      hasDockerfile = fileNames.some(
-        (f) =>
-          f.includes("dockerfile") ||
-          f === "docker-compose.yml" ||
-          f === "docker-compose.yaml",
-      );
-
-      // Contributing guide
-      hasContributing = fileNames.some((f) => f.includes("contributing"));
-
-      // License (REAL detection, not mocked)
-      hasLicense = fileNames.some(
-        (f) =>
-          f === "license" ||
-          f === "license.md" ||
-          f === "license.txt" ||
-          f === "licence" ||
-          f === "licence.md",
-      );
-
-      // Changelog
-      hasChangelog = fileNames.some(
-        (f) =>
-          f === "changelog" ||
-          f === "changelog.md" ||
-          f === "changes.md" ||
-          f === "history.md",
-      );
-
-      // Linter/formatter
-      hasPrettierOrLint = fileNames.some(
-        (f) =>
-          f.includes("eslint") ||
-          f.includes("prettier") ||
-          f.includes("tslint") ||
-          f === ".editorconfig" ||
-          f === "biome.json" ||
-          f === ".stylelintrc" ||
-          f === "pylintrc" ||
-          f === ".flake8" ||
-          f === "pyproject.toml" ||
-          f === ".rubocop.yml",
-      );
-
-      // .gitignore
-      hasGitignore = fileNames.some((f) => f === ".gitignore");
-
-      // .env handling
-      hasEnvExample = fileNames.some(
-        (f) =>
-          f === ".env.example" || f === ".env.sample" || f === ".env.template",
-      );
-      hasEnvCommitted = fileNames.some(
-        (f) => f === ".env" || f === ".env.local" || f === ".env.production",
-      );
-
-      // API docs
-      hasApiDocs = fileNames.some(
-        (f) =>
-          f === "swagger.json" ||
-          f === "swagger.yaml" ||
-          f === "openapi.json" ||
-          f === "openapi.yaml" ||
-          f.includes("apidoc") ||
-          dirNames.includes("docs") ||
-          dirNames.includes("documentation"),
-      );
-
-      // Modular structure: ≥3 distinct top-level directories (excluding meta dirs)
-      const meaningfulDirs = dirNames.filter(
-        (d) =>
-          !d.startsWith(".") &&
-          d !== "node_modules" &&
-          d !== "dist" &&
-          d !== "build" &&
-          d !== "out",
-      );
-      hasModularStructure = meaningfulDirs.length >= 3;
-
-      // Directory depth heuristic (based on meaningful dirs count)
-      directoryDepth = Math.min(5, meaningfulDirs.length);
-
-      // ─── Package.json analysis for dependency count ───
-      const packageJson = contents.find((f: any) => f.name === "package.json");
-      if (packageJson) {
-        try {
-          const pkgRes = await safeFetch(packageJson.download_url, headers);
-          if (pkgRes) {
-            const pkg = await pkgRes.json();
-            dependencyCount =
-              Object.keys(pkg.dependencies || {}).length +
-              Object.keys(pkg.devDependencies || {}).length;
-          }
-        } catch {
-          /* non-critical */
-        }
-      }
-    }
-  }
-
-  // ─── README Analysis ───
-  const readmeIndex = allDeepRepos.indexOf(repo);
-  if (readmeIndex < 8) {
-    // Analyze READMEs for top 8 repos
-    const readmeRes = await safeFetch(
-      `https://api.github.com/repos/${repo.owner}/${repo.name}/readme`,
-      headers,
-    );
-    if (readmeRes) {
-      const readmeJson = await readmeRes.json();
-      if (readmeJson.content) {
-        try {
-          const decoded = Buffer.from(readmeJson.content, "base64").toString(
-            "utf-8",
-          );
-          readmeSnippets[repo.name] =
-            decoded.substring(0, 800) + (decoded.length > 800 ? "..." : "");
-
-          // Word count
-          readmeWordCount = decoded
-            .split(/\s+/)
-            .filter((w) => w.length > 0).length;
-
-          // Check for installation instructions
-          const lowerReadme = decoded.toLowerCase();
-          readmeHasInstallInstructions =
-            /install|setup|getting started|npm install|pip install|yarn add|pnpm add|brew install/i.test(
-              lowerReadme,
-            );
-
-          // Check for usage examples / code snippets
-          readmeHasUsageExamples =
-            /```[\s\S]*?```|usage|example|how to use/i.test(decoded);
-
-          // Check for screenshots / images
-          readmeHasScreenshots =
-            /!\[.*?\]\(.*?\)|<img\s|screenshot|demo|preview/i.test(decoded);
-        } catch {
-          /* Base64 decode failure */
-        }
-      }
-    }
-  }
-
-  // Estimate LOC from repo size (KB × ~10 lines/KB for code repos)
-  totalLOC = Math.max(0, repo.size * 10);
-
-  repoQualitySignals.push({
-    repoName: repo.name,
-    hasTests,
-    hasCI,
-    hasDockerfile,
-    hasContributing,
-    hasLicense,
-    hasChangelog,
-    hasPrettierOrLint,
-    hasGitignore,
-    hasEnvExample,
-    hasEnvCommitted,
-    openIssueCount: repo.open_issues_count || 0,
-    dependencyCount,
-    lastCommitDate: repo.updated_at,
-    isArchived: repo.archived || false,
-    readmeWordCount,
-    readmeHasInstallInstructions,
-    readmeHasUsageExamples,
-    readmeHasScreenshots,
-    hasApiDocs,
-    hasWiki: false, // Wiki detection requires separate API call; deferred
-    totalLOC,
-    fileCount,
-    directoryDepth,
-    hasModularStructure,
-    languages: repoLanguages,
-  });
-}
-
-// ═══════════════════════════════════════════════════════════
-// PR ACTIVITY (REAL data — no mocks)
-// ═══════════════════════════════════════════════════════════
-
-async function fetchPRActivity(
-  username: string,
-  headers: Record<string, string>,
-) {
-  let totalPRsOpened = 0;
-  let totalPRsMerged = 0;
-  let externalPRsMerged = 0;
-  let prReviewsDone = 0;
-
-  try {
-    // Total PRs opened by user
-    const prRes = await safeFetch(
-      `https://api.github.com/search/issues?q=author:${username}+type:pr&per_page=1`,
-      headers,
-    );
-    if (prRes) {
-      const prData = await prRes.json();
-      totalPRsOpened = prData.total_count || 0;
-    }
-
-    // PRs merged (REAL — using is:merged filter)
-    const mergedRes = await safeFetch(
-      `https://api.github.com/search/issues?q=author:${username}+type:pr+is:merged&per_page=1`,
-      headers,
-    );
-    if (mergedRes) {
-      const mergedData = await mergedRes.json();
-      totalPRsMerged = mergedData.total_count || 0;
-    }
-
-    // External PRs merged (not own repos) — approximate by subtracting a heuristic
-    // We can't efficiently filter by "not owned by user" in the Search API,
-    // so we estimate: external ≈ total merged × 0.6 (many developers contribute externally)
-    // This is still an approximation, but better than the old 70% guess
-    // TODO: In production, paginate through PRs and check repo ownership
-    externalPRsMerged = Math.max(0, Math.floor(totalPRsMerged * 0.5));
-
-    // PRs reviewed by user (REAL)
-    const reviewRes = await safeFetch(
-      `https://api.github.com/search/issues?q=reviewed-by:${username}+type:pr&per_page=1`,
-      headers,
-    );
-    if (reviewRes) {
-      const reviewData = await reviewRes.json();
-      prReviewsDone = reviewData.total_count || 0;
-    }
-  } catch (e) {
-    console.warn("[Traceon] Failed to fetch PR activity:", e);
-  }
-
-  return { totalPRsOpened, totalPRsMerged, externalPRsMerged, prReviewsDone };
-}
-
-// ═══════════════════════════════════════════════════════════
-// ISSUE ACTIVITY
-// ═══════════════════════════════════════════════════════════
-
-async function fetchIssueActivity(
-  username: string,
-  headers: Record<string, string>,
-) {
-  let totalOpened = 0;
-  let externalIssues = 0;
-
-  try {
-    const issueRes = await safeFetch(
-      `https://api.github.com/search/issues?q=author:${username}+type:issue&per_page=1`,
-      headers,
-    );
-    if (issueRes) {
-      const issueData = await issueRes.json();
-      totalOpened = issueData.total_count || 0;
-    }
-
-    // External issues estimate: similar approach
-    externalIssues = Math.max(0, Math.floor(totalOpened * 0.4));
-  } catch (e) {
-    console.warn("[Traceon] Failed to fetch issue activity:", e);
-  }
-
-  return { totalOpened, externalIssues };
-}
-
-// ═══════════════════════════════════════════════════════════
-// COMMIT FREQUENCY (with GraphQL Contribution Calendar)
-// ═══════════════════════════════════════════════════════════
-
-const CONTRIBUTION_QUERY = `
-query($username: String!, $from: DateTime!, $to: DateTime!) {
-  user(login: $username) {
-    contributionsCollection(from: $from, to: $to) {
-      contributionCalendar {
-        totalContributions
-        weeks {
-          contributionDays {
-            contributionCount
-            date
-          }
-        }
-      }
-    }
-  }
-}
-`;
-
-async function fetchContributionGraphQL(
-  username: string,
-  token: string,
-): Promise<{
-  weeks: { contributionCount: number; date: string }[];
-  totalContributions: number;
-} | null> {
-  try {
-    const now = new Date();
-    const from = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString();
-    const to = now.toISOString();
-
-    const res = await fetch("https://api.github.com/graphql", {
-      method: "POST",
-      headers: {
-        Authorization: `bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        query: CONTRIBUTION_QUERY,
-        variables: { username, from, to },
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) return null;
-
-    const json = await res.json();
-    if (json.errors) {
-      console.warn("[Traceon] GraphQL errors:", json.errors);
-      return null;
-    }
-
-    const calendar =
-      json.data?.user?.contributionsCollection?.contributionCalendar;
-    if (!calendar) return null;
-
-    const days: { contributionCount: number; date: string }[] = [];
-    for (const week of calendar.weeks) {
-      for (const day of week.contributionDays) {
-        days.push({
-          contributionCount: day.contributionCount,
-          date: day.date,
-        });
-      }
-    }
-
-    return { weeks: days, totalContributions: calendar.totalContributions };
-  } catch (e) {
-        console.warn("[Traceon] GraphQL contribution fetch failed, falling back to Events API:", e);
-    return null;
-  }
-}
-
-async function fetchCommitFrequency(
-  username: string,
-  headers: Record<string, string>,
-) {
-  const token = process.env.GITHUB_TOKEN;
-
-  // Try GraphQL API first for accurate yearly data
-  if (token) {
-    const graphqlData = await fetchContributionGraphQL(username, token);
-    if (graphqlData && graphqlData.weeks.length > 0) {
-      const now = Date.now();
-      const days = graphqlData.weeks;
-      let last30 = 0;
-      let last90 = 0;
-      const activeDateSet = new Set<string>();
-
-      for (const day of days) {
-        const diffDays =
-          (now - new Date(day.date).getTime()) / (1000 * 3600 * 24);
-
-        if (diffDays <= 365) {
-          if (day.contributionCount > 0) activeDateSet.add(day.date);
-        }
-        if (diffDays <= 30) last30 += day.contributionCount;
-        if (diffDays <= 90) last90 += day.contributionCount;
-      }
-
-      return {
-        last30Days: last30,
-        last90Days: last90,
-        last365Days: graphqlData.totalContributions,
-        activeDaysLastYear: activeDateSet.size,
-      };
-    }
-  }
-
-  // Fallback to Events API
-  let last30Days = 0;
-  let last90Days = 0;
-  let last365Days = 0;
-  const activeDates = new Set<string>();
-
-  console.warn(
-    "[Traceon] GraphQL unavailable, falling back to Events API (approximate)",
-  );
-
-  try {
-    const eventsRes = await safeFetch(
-      `https://api.github.com/users/${username}/events?per_page=100`,
-      headers,
-    );
-    if (eventsRes) {
-      const events = await eventsRes.json();
-      const now = Date.now();
-      if (Array.isArray(events)) {
-        events.forEach((ev: any) => {
-          if (ev.type === "PushEvent") {
-            const evDate = new Date(ev.created_at).getTime();
-            const diffDays = (now - evDate) / (1000 * 3600 * 24);
-            const pushCommits = ev.payload?.commits?.length || 1;
-
-            if (diffDays <= 30) last30Days += pushCommits;
-            if (diffDays <= 90) last90Days += pushCommits;
-            if (diffDays <= 365) last365Days += pushCommits;
-
-            const dateKey = new Date(ev.created_at).toISOString().split("T")[0];
-            if (diffDays <= 365) activeDates.add(dateKey);
-          }
-        });
-      }
-    }
-
-    if (last365Days <= last90Days && last90Days > 0) {
-      last365Days = Math.round(last90Days * (365 / 90) * 0.7);
-    }
-  } catch (e) {
-    console.warn("[Traceon] Failed to fetch commit frequency:", e);
-  }
+async function analyzeRepo(repo: FilteredRepo, headers: Record<string, string>, index: number): Promise<RepoAnalysis> {
+  const treePromise = fetchRepositoryTree(repo.owner, repo.name, repo.default_branch || 'HEAD', headers);
+  const languagePromise = index < 8 ? fetchLanguages(repo.owner, repo.name, headers) : Promise.resolve({});
+  const commitPromise = index < 8 ? fetchCommitSamples(repo.owner, repo.name, headers) : Promise.resolve([]);
+  const [tree, languages, commits] = await Promise.all([treePromise, languagePromise, commitPromise]);
+  const signals = inspectTree(tree);
+  const readmeSnippet = signals.readmePath ? await fetchReadme(repo.owner, repo.name, signals.readmePath, headers) : undefined;
+  const readme = analyzeReadme(readmeSnippet);
 
   return {
-    last30Days,
-    last90Days,
-    last365Days,
-    activeDaysLastYear: activeDates.size,
+    repoName: repo.name,
+    languages,
+    commits: commits.map(commit => ({ repoName: repo.name, ...commit })),
+    readmeSnippet,
+    qualitySignal: {
+      repoName: repo.name,
+      qualityObserved: signals.qualityObserved,
+      treeTruncated: signals.treeTruncated,
+      hasTests: signals.hasTests,
+      hasCI: signals.hasCI,
+      hasDockerfile: signals.hasDockerfile,
+      hasContributing: signals.hasContributing,
+      hasLicense: signals.hasLicense,
+      hasChangelog: signals.hasChangelog,
+      hasPrettierOrLint: signals.hasPrettierOrLint,
+      hasGitignore: signals.hasGitignore,
+      hasEnvExample: signals.hasEnvExample,
+      hasEnvCommitted: signals.hasEnvCommitted,
+      hasDependencyManifest: signals.hasDependencyManifest,
+      hasLockfile: signals.hasLockfile,
+      hasSecurityPolicy: signals.hasSecurityPolicy,
+      openIssueCount: repo.open_issues_count || 0,
+      dependencyCount: 0,
+      lastCommitDate: repo.pushed_at,
+      isArchived: repo.archived,
+      readmeWordCount: readme.wordCount,
+      readmeHasInstallInstructions: readme.hasInstallInstructions,
+      readmeHasUsageExamples: readme.hasUsageExamples,
+      readmeHasScreenshots: readme.hasScreenshots,
+      hasApiDocs: signals.hasApiDocs,
+      hasWiki: repo.has_wiki,
+      totalLOC: 0,
+      fileCount: signals.fileCount,
+      directoryDepth: signals.directoryDepth,
+      hasModularStructure: signals.hasModularStructure,
+      languages,
+    },
   };
+}
+
+async function fetchRepositoryTree(owner: string, repo: string, ref: string, headers: Record<string, string>): Promise<RepositoryTree | null> {
+  const response = await safeFetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(ref)}?recursive=1`, headers);
+  if (!response) return null;
+  const data = await response.json() as { tree?: TreeEntry[]; truncated?: boolean };
+  return { entries: data.tree?.filter(entry => entry.type === 'blob' || entry.type === 'tree') ?? [], truncated: data.truncated === true };
+}
+
+function inspectTree(tree: RepositoryTree | null): TreeSignals {
+  if (!tree) {
+    return {
+      qualityObserved: false, treeTruncated: false, hasTests: false, hasCI: false, hasDockerfile: false, hasContributing: false,
+      hasLicense: false, hasChangelog: false, hasPrettierOrLint: false, hasGitignore: false, hasEnvExample: false,
+      hasEnvCommitted: false, hasDependencyManifest: false, hasLockfile: false, hasSecurityPolicy: false, hasApiDocs: false,
+      fileCount: 0, directoryDepth: 0, hasModularStructure: false,
+    };
+  }
+
+  const paths = tree.entries.filter(entry => entry.type === 'blob').map(entry => entry.path.replace(/^\/+/, ''));
+  const lowerPaths = paths.map(path => path.toLowerCase());
+  const topDirectories = new Set(paths.map(path => path.split('/')[0]).filter(part => part && !part.startsWith('.') && !['node_modules', 'dist', 'build', 'coverage', 'out'].includes(part)));
+  const hasPath = (predicate: (path: string) => boolean) => lowerPaths.some(predicate);
+  const readmePath = paths.find(path => /^readme(?:\.[^/]+)?$/i.test(path.split('/').pop() || ''));
+
+  return {
+    qualityObserved: true,
+    treeTruncated: tree.truncated,
+    hasTests: hasPath(path => /(^|\/)(?:__tests__|test|tests|spec|specs)\//.test(path) || /\.(?:test|spec)\.[^/]+$/.test(path) || /(?:^|\/)(?:jest|vitest|playwright|pytest)\.(?:config|ini)/.test(path)),
+    hasCI: hasPath(path => path.startsWith('.github/workflows/') || path.startsWith('.circleci/') || /(?:^|\/)(?:jenkinsfile|\.gitlab-ci\.yml|\.travis\.yml)$/.test(path)),
+    hasDockerfile: hasPath(path => /(^|\/)(?:dockerfile|docker-compose(?:\.[^/]+)?)$/.test(path)),
+    hasContributing: hasPath(path => /(^|\/)contributing(?:\.[^/]+)?$/.test(path)),
+    hasLicense: hasPath(path => /(^|\/)licen[cs]e(?:\.[^/]+)?$/.test(path)),
+    hasChangelog: hasPath(path => /(^|\/)(?:changelog|changes|history)(?:\.[^/]+)?$/.test(path)),
+    hasPrettierOrLint: hasPath(path => /(^|\/)(?:eslint|prettier|biome|stylelint|pylintrc|\.flake8|\.rubocop)/.test(path)),
+    hasGitignore: hasPath(path => /(^|\/)\.gitignore$/.test(path)),
+    hasEnvExample: hasPath(path => /(^|\/)\.env\.(?:example|sample|template)$/.test(path)),
+    hasEnvCommitted: hasPath(path => /(^|\/)\.env(?:\.(?!example$|sample$|template$)[^/]+)?$/.test(path)),
+    hasDependencyManifest: hasPath(path => /(^|\/)(?:package\.json|pyproject\.toml|requirements(?:-[^/]+)?\.txt|go\.mod|cargo\.toml|gemfile|composer\.json)$/.test(path)),
+    hasLockfile: hasPath(path => /(^|\/)(?:package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|poetry\.lock|pipfile\.lock|cargo\.lock|composer\.lock)$/.test(path)),
+    hasSecurityPolicy: hasPath(path => /(^|\/)(?:security\.md|\.github\/dependabot\.yml|\.github\/workflows\/.*(?:codeql|security).+\.ya?ml)$/.test(path)),
+    hasApiDocs: hasPath(path => /(^|\/)(?:swagger|openapi)\.(?:json|ya?ml)$/.test(path) || /(^|\/)apidoc/.test(path)),
+    fileCount: paths.length,
+    directoryDepth: Math.min(10, Math.max(0, ...paths.map(path => path.split('/').length - 1))),
+    hasModularStructure: topDirectories.size >= 2 && paths.length >= 5,
+    readmePath,
+  };
+}
+
+async function fetchLanguages(owner: string, repo: string, headers: Record<string, string>): Promise<Record<string, number>> {
+  const response = await safeFetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/languages`, headers);
+  return response ? await response.json() as Record<string, number> : {};
+}
+
+async function fetchCommitSamples(owner: string, repo: string, headers: Record<string, string>): Promise<Array<{ message: string; date: string }>> {
+  const response = await safeFetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits?per_page=5`, headers);
+  if (!response) return [];
+  const commits = await response.json() as Array<{ commit?: { message?: string; author?: { date?: string } } }>;
+  return commits.flatMap(commit => commit.commit?.message ? [{ message: commit.commit.message.split('\n')[0], date: commit.commit.author?.date || '' }] : []);
+}
+
+async function fetchReadme(owner: string, repo: string, readmePath: string, headers: Record<string, string>): Promise<string | undefined> {
+  const response = await safeFetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${readmePath.split('/').map(encodeURIComponent).join('/')}`, headers);
+  if (!response) return undefined;
+  const data = await response.json() as { content?: string; encoding?: string };
+  return data.encoding === 'base64' && data.content ? Buffer.from(data.content, 'base64').toString('utf8') : undefined;
+}
+
+function analyzeReadme(content?: string): { wordCount: number; hasInstallInstructions: boolean; hasUsageExamples: boolean; hasScreenshots: boolean } {
+  if (!content) return { wordCount: 0, hasInstallInstructions: false, hasUsageExamples: false, hasScreenshots: false };
+  const lower = content.toLowerCase();
+  return {
+    wordCount: content.split(/\s+/).filter(Boolean).length,
+    hasInstallInstructions: /install|setup|getting started|npm install|pip install|yarn add|pnpm add|brew install/.test(lower),
+    hasUsageExamples: /```[\s\S]*?```|usage|example|how to use/.test(lower),
+    hasScreenshots: /!\[.*?\]\(.*?\)|<img\s|screenshot|demo|preview/.test(lower),
+  };
+}
+
+async function fetchPRActivity(username: string, headers: Record<string, string>) {
+  const encodedUser = encodeURIComponent(username);
+  const [opened, merged, reviewed] = await Promise.all([
+    safeFetch(`https://api.github.com/search/issues?q=author:${encodedUser}+type:pr&per_page=1`, headers),
+    safeFetch(`https://api.github.com/search/issues?q=author:${encodedUser}+type:pr+is:merged&per_page=1`, headers),
+    safeFetch(`https://api.github.com/search/issues?q=reviewed-by:${encodedUser}+type:pr&per_page=1`, headers),
+  ]);
+  const count = async (response: Response | null) => response ? Number((await response.json() as { total_count?: number }).total_count || 0) : 0;
+  const [totalPRsOpened, totalPRsMerged, prReviewsDone] = await Promise.all([count(opened), count(merged), count(reviewed)]);
+  // GitHub Search cannot identify every destination repository from a count. Do
+  // not fabricate an external-contribution estimate.
+  return { totalPRsOpened, totalPRsMerged, externalPRsMerged: 0, prReviewsDone };
+}
+
+async function fetchIssueActivity(username: string, headers: Record<string, string>) {
+  const response = await safeFetch(`https://api.github.com/search/issues?q=author:${encodeURIComponent(username)}+type:issue&per_page=1`, headers);
+  const data = response ? await response.json() as { total_count?: number } : null;
+  return { totalOpened: Number(data?.total_count || 0), externalIssues: 0 };
+}
+
+const CONTRIBUTION_QUERY = `query($username: String!, $from: DateTime!, $to: DateTime!) { user(login: $username) { contributionsCollection(from: $from, to: $to) { contributionCalendar { totalContributions weeks { contributionDays { contributionCount date } } } } } }`;
+
+async function fetchCommitFrequency(username: string, headers: Record<string, string>) {
+  const token = process.env.GITHUB_TOKEN;
+  if (token) {
+    try {
+      const to = new Date();
+      const from = new Date(to.getTime() - 365 * 24 * 60 * 60 * 1000);
+      const response = await fetch('https://api.github.com/graphql', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: CONTRIBUTION_QUERY, variables: { username, from: from.toISOString(), to: to.toISOString() } }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const data = response.ok ? await response.json() as { data?: { user?: { contributionsCollection?: { contributionCalendar?: { totalContributions?: number; weeks?: Array<{ contributionDays?: Array<{ contributionCount?: number; date?: string }> }> } } } } } : null;
+      const days = data?.data?.user?.contributionsCollection?.contributionCalendar?.weeks?.flatMap(week => week.contributionDays || []) || [];
+      if (days.length > 0) {
+        const now = Date.now();
+        const sum = (withinDays: number) => days.reduce((total, day) => now - new Date(day.date || '').getTime() <= withinDays * 86_400_000 ? total + (day.contributionCount || 0) : total, 0);
+        return {
+          last30Days: sum(30),
+          last90Days: sum(90),
+          last365Days: data?.data?.user?.contributionsCollection?.contributionCalendar?.totalContributions || 0,
+          activeDaysLastYear: days.filter(day => (day.contributionCount || 0) > 0).length,
+        };
+      }
+    } catch {
+      // The public Events API is a limited fallback, not extrapolated data.
+    }
+  }
+
+  const response = await safeFetch(`https://api.github.com/users/${encodeURIComponent(username)}/events?per_page=100`, headers);
+  const events = response ? await response.json() as Array<{ type?: string; created_at?: string; payload?: { commits?: unknown[] } }> : [];
+  const activeDates = new Set<string>();
+  const totals = { last30Days: 0, last90Days: 0, last365Days: 0 };
+  const now = Date.now();
+  for (const event of events) {
+    if (event.type !== 'PushEvent' || !event.created_at) continue;
+    const ageDays = (now - new Date(event.created_at).getTime()) / 86_400_000;
+    const commits = event.payload?.commits?.length || 1;
+    if (ageDays <= 30) totals.last30Days += commits;
+    if (ageDays <= 90) totals.last90Days += commits;
+    if (ageDays <= 365) {
+      totals.last365Days += commits;
+      activeDates.add(event.created_at.slice(0, 10));
+    }
+  }
+  return { ...totals, activeDaysLastYear: activeDates.size };
 }

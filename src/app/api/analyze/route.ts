@@ -63,6 +63,7 @@ export async function POST(req: Request) {
             repoUrl,
             userId,
             status: 'complete',
+            analysisVersion: 2,
         });
         if (existing) {
             return NextResponse.json({
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
             name,
             owner,
             status: 'pending',
+            analysisVersion: 2,
             sessionId,
         });
 

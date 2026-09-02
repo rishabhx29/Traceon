@@ -1,130 +1,98 @@
-import { IGraphNode, IGraphEdge, IMetrics } from '@/lib/db/models/AnalysisResult';
+import type { IGraphNode, IGraphEdge, IMetrics } from '@/lib/db/models/AnalysisResult';
+import { rankImportantNodes } from '@/lib/analyzer/graph/importance';
 
-/**
- * Generate a structured architecture summary from graph data.
- * This produces a markdown-style summary that can be displayed directly or
- * further enhanced by an AI model.
- */
+/** Generate a repeatable architecture summary from resolved graph evidence. */
 export function generateArchitectureSummary(
     nodes: IGraphNode[],
     edges: IGraphEdge[],
     metrics: IMetrics,
-    repoName?: string
+    repoName?: string,
 ): string {
     const lines: string[] = [];
-
     const title = repoName || 'Repository';
+
     lines.push(`# Architecture Summary — ${title}`);
     lines.push('');
-
-    // --- Overview ---
     lines.push('## Overview');
-    lines.push(`This codebase contains **${metrics.totalFiles} files** with **${metrics.totalDependencies} dependency connections** (density: ${metrics.dependencyDensity.toFixed(2)} deps/file).`);
+    lines.push(`This codebase contains **${metrics.totalFiles} files** with **${metrics.totalDependencies} resolved internal dependencies** (density: ${metrics.dependencyDensity.toFixed(2)} deps/file).`);
     lines.push('');
 
-    // --- File Type Breakdown ---
     lines.push('## File Type Distribution');
-    const sortedTypes = Object.entries(metrics.fileTypeDistribution)
-        .sort(([, a], [, b]) => b - a);
-    for (const [ext, count] of sortedTypes) {
-        const pct = ((count / metrics.totalFiles) * 100).toFixed(1);
+    for (const [ext, count] of Object.entries(metrics.fileTypeDistribution).sort(([, a], [, b]) => b - a)) {
+        const pct = metrics.totalFiles ? ((count / metrics.totalFiles) * 100).toFixed(1) : '0.0';
         lines.push(`- **.${ext}**: ${count} files (${pct}%)`);
     }
     lines.push('');
 
-    // --- Architectural Layers ---
     lines.push('## Architectural Layers');
-    const layerCounts: Record<string, number> = {};
-    const layerFiles: Record<string, string[]> = {};
-    for (const node of nodes) {
-        const layer = node.type || 'other';
-        layerCounts[layer] = (layerCounts[layer] || 0) + 1;
-        if (!layerFiles[layer]) layerFiles[layer] = [];
-        layerFiles[layer].push(node.path);
-    }
-    const layerLabels: Record<string, string> = {
-        entry: '🟡 Entry Points',
-        component: '🟣 Components / UI',
-        utility: '🔵 Utilities / Libraries',
-        module: '🟢 Modules',
-        config: '🟠 Configuration',
-        type: '⚪ Type Definitions',
-        other: '⚫ Other',
-    };
-    for (const [layer, count] of Object.entries(layerCounts).sort(([, a], [, b]) => b - a)) {
-        const label = layerLabels[layer] || layer;
-        lines.push(`- **${label}**: ${count} files`);
+    const layerCounts = nodes.reduce<Record<string, number>>((counts, node) => {
+        counts[node.type] = (counts[node.type] || 0) + 1;
+        return counts;
+    }, {});
+    for (const [layer, count] of Object.entries(layerCounts).sort(([aLayer, aCount], [bLayer, bCount]) => bCount - aCount || aLayer.localeCompare(bLayer))) {
+        lines.push(`- **${layer}**: ${count} files`);
     }
     lines.push('');
 
-    // --- Critical Modules (Top Hub Files) ---
     lines.push('## Critical Modules');
-    lines.push('These files have the highest connectivity and are architectural hotspots:');
+    lines.push('Files below have observed entry-point or dependency evidence; disconnected files are not promoted by rank alone.');
     lines.push('');
-
-    const topNodes = [...nodes]
-        .sort((a, b) => (b.inDegree * 2 + b.outDegree) - (a.inDegree * 2 + a.outDegree))
+    const nodesById = new Map(nodes.map(node => [node.id, node]));
+    const importantNodes = rankImportantNodes(nodes, edges)
+        .filter(node => node.score >= 35 && node.directDependents > 0)
         .slice(0, 10);
-
-    for (const node of topNodes) {
-        const total = node.inDegree + node.outDegree;
-        if (total === 0) continue;
-        lines.push(`- **\`${node.path}\`** — ${node.inDegree} dependents, ${node.outDegree} dependencies (${node.loc} LOC)`);
+    if (importantNodes.length === 0) {
+        lines.push('- No file has enough resolved graph evidence to classify as critical.');
+    }
+    for (const important of importantNodes) {
+        const node = nodesById.get(important.id)!;
+        const evidence = important.reason === 'entry-point'
+            ? 'runtime entry point'
+            : `${important.directDependents} direct dependent${important.directDependents === 1 ? '' : 's'}`;
+        lines.push(`- **\`${node.path}\`** — ${evidence}; ${node.outDegree} dependencies (${node.loc} LOC)`);
     }
     lines.push('');
 
-    // --- Entry Points ---
-    const entryPoints = nodes.filter(n => n.type === 'entry');
+    const entryPoints = nodes.filter(node => node.type === 'entry').sort((a, b) => a.path.localeCompare(b.path));
     if (entryPoints.length > 0) {
         lines.push('## Entry Points');
-        lines.push('These files serve as the main entry points of the application:');
-        lines.push('');
-        for (const ep of entryPoints.slice(0, 15)) {
-            lines.push(`- \`${ep.path}\` (${ep.loc} LOC)`);
+        for (const entryPoint of entryPoints.slice(0, 15)) {
+            lines.push(`- \`${entryPoint.path}\` (${entryPoint.loc} LOC)`);
         }
         lines.push('');
     }
 
-    // --- Circular Dependencies ---
     if (metrics.circularDependencies.length > 0) {
-        lines.push('## ⚠️ Circular Dependencies');
-        lines.push(`Found **${metrics.circularDependencies.length}** circular dependency chain(s):`);
-        lines.push('');
+        lines.push('## Circular Dependencies');
         for (const cycle of metrics.circularDependencies.slice(0, 5)) {
-            lines.push(`- ${cycle.map(c => `\`${c}\``).join(' → ')}`);
+            lines.push(`- ${cycle.map(file => `\`${file}\``).join(' -> ')}`);
         }
         lines.push('');
     }
 
-    // --- Dependency Flow Summary ---
+    const isolated = nodes.filter(node => node.inDegree === 0 && node.outDegree === 0).length;
+    const consumers = nodes.filter(node => node.inDegree === 0 && node.outDegree > 0).length;
+    const providers = nodes.filter(node => node.inDegree > 0 && node.outDegree === 0).length;
+    const connectors = nodes.filter(node => node.inDegree > 0 && node.outDegree > 0).length;
     lines.push('## Dependency Flow');
-    const isolatedNodes = nodes.filter(n => n.inDegree === 0 && n.outDegree === 0);
-    const leafNodes = nodes.filter(n => n.inDegree === 0 && n.outDegree > 0);
-    const sinkNodes = nodes.filter(n => n.inDegree > 0 && n.outDegree === 0);
-    const connectorNodes = nodes.filter(n => n.inDegree > 0 && n.outDegree > 0);
-
-    lines.push(`- **Isolated files** (no connections): ${isolatedNodes.length}`);
-    lines.push(`- **Leaf consumers** (only import, not imported): ${leafNodes.length}`);
-    lines.push(`- **Pure providers** (only imported, don\'t import): ${sinkNodes.length}`);
-    lines.push(`- **Connectors** (both import and are imported): ${connectorNodes.length}`);
+    lines.push(`- **Isolated files**: ${isolated}`);
+    lines.push(`- **Leaf consumers**: ${consumers}`);
+    lines.push(`- **Pure providers**: ${providers}`);
+    lines.push(`- **Connectors**: ${connectors}`);
     lines.push('');
 
-    // --- Directory Clusters ---
     lines.push('## Directory Clusters');
-    const dirCounts: Record<string, number> = {};
-    for (const node of nodes) {
-        const parts = node.path.split('/');
-        const topDir = parts.length > 1 ? parts[0] : '(root)';
-        dirCounts[topDir] = (dirCounts[topDir] || 0) + 1;
-    }
-    const sortedDirs = Object.entries(dirCounts).sort(([, a], [, b]) => b - a).slice(0, 15);
-    for (const [dir, count] of sortedDirs) {
-        lines.push(`- **${dir}/**: ${count} files`);
+    const directoryCounts = nodes.reduce<Record<string, number>>((counts, node) => {
+        const directory = node.path.includes('/') ? node.path.split('/')[0] : '(root)';
+        counts[directory] = (counts[directory] || 0) + 1;
+        return counts;
+    }, {});
+    for (const [directory, count] of Object.entries(directoryCounts).sort(([aDirectory, aCount], [bDirectory, bCount]) => bCount - aCount || aDirectory.localeCompare(bDirectory)).slice(0, 15)) {
+        lines.push(`- **${directory}/**: ${count} files`);
     }
     lines.push('');
-
     lines.push('---');
-    lines.push(`*Generated by Traceon at ${new Date().toISOString()}*`);
+    lines.push('*Generated from the resolved dependency graph.*');
 
     return lines.join('\n');
 }

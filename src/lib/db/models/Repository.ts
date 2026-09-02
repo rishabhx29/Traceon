@@ -10,6 +10,7 @@ export interface IRepository extends Document {
     fileCount: number;
     analyzedAt: Date | null;
     errorMessage: string | null;
+    analysisVersion: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -56,6 +57,10 @@ const RepositorySchema = new Schema<IRepository>(
         errorMessage: {
             type: String,
             default: null,
+        },
+        analysisVersion: {
+            type: Number,
+            default: 1,
         },
     },
     {

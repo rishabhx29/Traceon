@@ -69,18 +69,14 @@ function reverseBFS(
 function isLowImportanceFile(filePath: string): boolean {
     const name = filePath.toLowerCase();
     return (
-        name.includes('.config.') ||
-        name.includes('.setup.') ||
         name.includes('.test.') ||
         name.includes('.spec.') ||
         name.includes('__test') ||
         name.includes('__mock') ||
-        name.endsWith('.d.ts') ||
-        name.endsWith('.json') ||
-        name.includes('/types/') ||
-        name.includes('/types.ts') ||
-        name.includes('.css') ||
-        name.includes('.scss')
+        name.includes('/fixtures/') ||
+        name.includes('/generated/') ||
+        name.includes('/dist/') ||
+        name.includes('/build/')
     );
 }
 
@@ -201,6 +197,6 @@ export function generateFullImpactReport(
     }
 
     // Sort by impact score descending
-    results.sort((a, b) => b.impactScore - a.impactScore);
+    results.sort((a, b) => b.impactScore - a.impactScore || a.targetNodeId.localeCompare(b.targetNodeId));
     return results;
 }
