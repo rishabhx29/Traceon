@@ -1,60 +1,16 @@
 import { UserNotFoundError, GitHubRateLimitError } from '@/lib/errors';
-import type { FilteredRepo, RepoQualitySignal } from './types';
+import type {
+  FilteredRepo,
+  RepoQualitySignal,
+  GitHubUser,
+  GitHubRepo,
+  CommitSample,
+  EnrichedProfileData,
+} from './types';
 import { filterAndWeightRepos } from './repoFilter';
+import { deepScanRepo } from './deepScan';
 
-export interface GitHubUser {
-  login: string;
-  avatar_url: string;
-  name: string | null;
-  bio: string | null;
-  public_repos: number;
-  followers: number;
-  following: number;
-  created_at: string;
-}
-
-export interface GitHubRepo {
-  name: string;
-  description: string | null;
-  stargazers_count: number;
-  forks_count: number;
-  language: string | null;
-  topics: string[];
-  created_at: string;
-  updated_at: string;
-  pushed_at: string;
-  size: number;
-  fork: boolean;
-  owner: { login: string };
-  html_url: string;
-  archived: boolean;
-  open_issues_count: number;
-  has_wiki: boolean;
-  default_branch: string;
-}
-
-export interface CommitSample {
-  repoName: string;
-  message: string;
-  date: string;
-}
-
-export interface EnrichedProfileData {
-  user: GitHubUser;
-  filteredRepos: FilteredRepo[];
-  allRepos: GitHubRepo[];
-  languageBytes: Record<string, number>;
-  recentCommits: CommitSample[];
-  readmeSnippets: Record<string, string>;
-  commitFrequency: { last30Days: number; last90Days: number; last365Days: number; activeDaysLastYear: number };
-  pullRequestActivity: { totalPRsOpened: number; totalPRsMerged: number; externalPRsMerged: number; prReviewsDone: number };
-  issueActivity: { totalOpened: number; externalIssues: number };
-  repoQualitySignals: RepoQualitySignal[];
-  accountAge: { years: number; months: number };
-  totalStarsReceived: number;
-  totalForksReceived: number;
-  orgsCount: number;
-}
+export type { GitHubUser, GitHubRepo, CommitSample, EnrichedProfileData };
 
 interface TreeEntry { path: string; type: 'blob' | 'tree'; size?: number }
 interface RepositoryTree { entries: TreeEntry[]; truncated: boolean }
@@ -86,6 +42,7 @@ interface RepoAnalysis {
   commits: CommitSample[];
   readmeSnippet?: string;
   qualitySignal: RepoQualitySignal;
+  manifestFiles?: Array<{ filename: string; content: string }>;
 }
 
 const getHeaders = (): Record<string, string> => ({
@@ -138,6 +95,7 @@ export async function fetchGitHubProfileData(username: string): Promise<Enriched
   const recentCommits: CommitSample[] = [];
   const readmeSnippets: Record<string, string> = {};
   const repoQualitySignals: RepoQualitySignal[] = [];
+  const detectedManifests: Array<{ filename: string; content: string }> = [];
 
   for (const chunk of chunkArray(deepRepos, 4)) {
     const results = await Promise.all(chunk.map(async repo => {
@@ -155,6 +113,14 @@ export async function fetchGitHubProfileData(username: string): Promise<Enriched
       }
       recentCommits.push(...result.commits);
       if (result.readmeSnippet) readmeSnippets[result.repoName] = result.readmeSnippet;
+      if (result.manifestFiles && detectedManifests.length < 25) {
+        const remaining = 25 - detectedManifests.length;
+        const prefixed = result.manifestFiles.slice(0, remaining).map(file => ({
+          filename: `${result.repoName}/${file.filename}`,
+          content: file.content,
+        }));
+        detectedManifests.push(...prefixed);
+      }
       repoQualitySignals.push(result.qualitySignal);
     }
   }
@@ -184,6 +150,7 @@ export async function fetchGitHubProfileData(username: string): Promise<Enriched
     totalStarsReceived: allRepos.reduce((sum, repo) => sum + (repo.stargazers_count || 0), 0),
     totalForksReceived: allRepos.reduce((sum, repo) => sum + (repo.forks_count || 0), 0),
     orgsCount: Array.isArray(orgs) ? orgs.length : 0,
+    detectedManifests,
   };
 }
 
@@ -193,6 +160,10 @@ async function analyzeRepo(repo: FilteredRepo, headers: Record<string, string>, 
   const commitPromise = index < 8 ? fetchCommitSamples(repo.owner, repo.name, headers) : Promise.resolve([]);
   const [tree, languages, commits] = await Promise.all([treePromise, languagePromise, commitPromise]);
   const signals = inspectTree(tree);
+  // Deep static analysis on the strongest repos only — bounded work, evidence-grade metrics.
+  const deepMetrics = index < 5 && signals.qualityObserved && !signals.treeTruncated
+    ? await deepScanRepo(repo.owner, repo.name, repo.default_branch || 'HEAD')
+    : undefined;
   const readmeSnippet = signals.readmePath ? await fetchReadme(repo.owner, repo.name, signals.readmePath, headers) : undefined;
   const readme = analyzeReadme(readmeSnippet);
 
@@ -201,7 +172,9 @@ async function analyzeRepo(repo: FilteredRepo, headers: Record<string, string>, 
     languages,
     commits: commits.map(commit => ({ repoName: repo.name, ...commit })),
     readmeSnippet,
+    manifestFiles: deepMetrics?.manifestFiles,
     qualitySignal: {
+      ...deepMetrics,
       repoName: repo.name,
       qualityObserved: signals.qualityObserved,
       treeTruncated: signals.treeTruncated,
@@ -236,7 +209,6 @@ async function analyzeRepo(repo: FilteredRepo, headers: Record<string, string>, 
     },
   };
 }
-
 async function fetchRepositoryTree(owner: string, repo: string, ref: string, headers: Record<string, string>): Promise<RepositoryTree | null> {
   const response = await safeFetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(ref)}?recursive=1`, headers);
   if (!response) return null;

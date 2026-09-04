@@ -130,7 +130,7 @@ export function MasterHero() {
                     transition={{ duration: 0.6, delay: 0.8, ease: "easeOut" }}
                     className="flex flex-wrap justify-center gap-4 mt-20 pt-10 border-t border-stroke/50 max-w-4xl"
                 >
-                    <div className="flex items-center gap-2.5 text-xs font-mono text-text-2 bg-surface-1/50 border border-stroke px-4 py-1.5 rounded-full"><Zap className="w-3.5 h-3.5 text-amber" /> Groq Llama 3.3 Engine</div>
+                    <div className="flex items-center gap-2.5 text-xs font-mono text-text-2 bg-surface-1/50 border border-stroke px-4 py-1.5 rounded-full"><Zap className="w-3.5 h-3.5 text-amber" /> Deterministic Evidence Engine</div>
                     <div className="flex items-center gap-2.5 text-xs font-mono text-text-2 bg-surface-1/50 border border-stroke px-4 py-1.5 rounded-full"><Shield className="w-3.5 h-3.5 text-emerald" /> Secure Context parsing</div>
                     <div className="flex items-center gap-2.5 text-xs font-mono text-text-2 bg-surface-1/50 border border-stroke px-4 py-1.5 rounded-full"><Network className="w-3.5 h-3.5 text-text-1" /> Real-time Knowledge Graphs</div>
                 </motion.div>

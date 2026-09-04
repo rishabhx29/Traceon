@@ -5,8 +5,8 @@
 //   1. Check cache (24h TTL)
 //   2. Fetch GitHub data (enhanced fetcher)
 //   3. Compute CURISM scores deterministically
-//   4. Compute master score & grade
-//   5. Generate AI qualitative descriptions
+//   4. Compute master score & grade (percentile calibrated against stored profiles)
+//   5. Generate deterministic qualitative descriptions
 //   6. Save combined result to database
 
 import connectDB from '@/lib/db/connection';
@@ -14,7 +14,7 @@ import { ProfileAnalysis } from '@/lib/db/models/ProfileAnalysis';
 import { fetchGitHubProfileData } from '@/lib/profile/githubFetcher';
 import { analyzeProfileQualitative } from '@/lib/profile/analyzer';
 import { computeAllCURISMScores } from '@/lib/profile/curismScorer';
-import { computeMasterScoreData } from '@/lib/profile/rankCalculator';
+import { computeMasterScoreData, computeRealPercentile } from '@/lib/profile/rankCalculator';
 // Import our custom error classes
 import { UserNotFoundError, GitHubRateLimitError } from '@/lib/errors';
 
@@ -91,24 +91,32 @@ export async function getOrAnalyzeProfile(username: string, forceRefresh: boolea
         githubData.repoQualitySignals.some(signal => signal.qualityObserved && !signal.treeTruncated),
     );
 
+    // Prefer a percentile calibrated against real stored profiles; fall back
+    // to the synthetic curve while the benchmark population is below 25.
+    const realPercentile = await computeRealPercentile(masterScore.finalScore);
+    if (realPercentile !== undefined) {
+        masterScore.percentile = realPercentile;
+        console.log(`[Profile Service] Using real percentile for ${username}: ${realPercentile}`);
+    }
+
     console.log(`[Profile Service] CURISM Scores for ${username}:`, {
         ...curismScores,
         master: masterScore.finalScore,
         grade: masterScore.grade,
     });
 
-    // ─── 5. Generate AI Qualitative Descriptions ───
-    console.log(`[Profile Service] Running AI qualitative analysis for ${username}...`);
+    // ─── 5. Generate Qualitative Descriptions (deterministic, evidence-based) ───
+    console.log(`[Profile Service] Running qualitative analysis for ${username}...`);
     let aiResult;
     try {
-        aiResult = await analyzeProfileQualitative(
+        aiResult = analyzeProfileQualitative(
             githubData,
             curismScores,
             acidBreakdown,
             masterScore,
         );
     } catch (e) {
-        console.error(`[Profile Service] AI analysis failed for ${username}, using fallback:`, e);
+        console.error(`[Profile Service] Qualitative analysis failed for ${username}, using fallback:`, e);
         // The analyzer has its own fallback, but if the entire call throws, use a minimal fallback
         const topLangs = Object.entries(githubData.languageBytes)
             .sort(([aLanguage, aBytes], [bLanguage, bBytes]) => bBytes - aBytes || aLanguage.localeCompare(bLanguage))
@@ -160,7 +168,7 @@ export async function getOrAnalyzeProfile(username: string, forceRefresh: boolea
             percentile: masterScore.percentile,
             assessmentAvailable: masterScore.assessmentAvailable,
         },
-        // AI qualitative assessment
+        // Qualitative assessment (deterministic)
         aiAssessment: {
             archetype: aiResult.archetype,
             curismDescriptions: aiResult.curismDescriptions,

@@ -3,6 +3,11 @@
 
 import type { DeveloperGrade, MasterScoreData, CURISMScores } from './types';
 import { computeFinalScore } from './curismScorer';
+import dbConnect from '@/lib/db/connection';
+import { ProfileAnalysis } from '@/lib/db/models/ProfileAnalysis';
+
+// Minimum benchmark population before real percentiles are trusted.
+const MIN_PERCENTILE_POPULATION = 25;
 
 // ═══════════════════════════════════════════════════════════
 // §13 — Grade Thresholds
@@ -37,16 +42,13 @@ export function getGrade(score: number): { grade: DeveloperGrade; title: string 
 }
 
 /**
- * §13.1 — Percentile Calibration
+ * §13.1 — Percentile Calibration (synthetic fallback)
  *
- * Calculate what percentile this score falls at relative to a global distribution.
- * For now, we use a reasonable synthetic distribution based on the spec's
- * implied normal distribution. In production, this should be replaced with
- * real stored benchmark data.
+ * Approximate percentile using a logistic curve centered around ~5.5.
+ * Used only while the stored-profile benchmark population is below
+ * MIN_PERCENTILE_POPULATION — real percentiles come from computeRealPercentile.
  */
 export function getPercentile(score: number): number {
-  // Approximate percentile using a logistic curve centered around ~5.5
-  // This models: most developers score 4-6, few score 0-2 or 9-10
   // P(score) ≈ 100 / (1 + e^(-1.5 × (score - 5.5)))
   const percentile = 100 / (1 + Math.exp(-1.5 * (score - 5.5)));
   return Math.round(Math.min(99, Math.max(1, percentile)));
@@ -92,6 +94,31 @@ export function computeMasterScoreData(scores: CURISMScores, hasRepositoryEviden
     percentile,
     assessmentAvailable: true,
   };
+}
+
+/**
+ * §13.2 — Real Percentile Calibration
+ *
+ * Computes percentile against every stored assessable profile in MongoDB
+ * instead of a synthetic curve. Returns undefined until the benchmark
+ * population is large enough to be statistically meaningful (callers then
+ * fall back to the synthetic logistic estimate).
+ */
+export async function computeRealPercentile(finalScore: number): Promise<number | undefined> {
+  try {
+    await dbConnect();
+    const [above, total] = await Promise.all([
+      ProfileAnalysis.countDocuments({ 'masterScore.assessmentAvailable': true, 'masterScore.finalScore': { $gt: finalScore } }),
+      ProfileAnalysis.countDocuments({ 'masterScore.assessmentAvailable': true }),
+    ]);
+    if (total < MIN_PERCENTILE_POPULATION) return undefined;
+    const percentile = Math.max(1, Math.min(99, Math.round(((total - above) / total) * 100)));
+    console.log(`[Traceon] Real percentile for score ${finalScore}: ${percentile} (population ${total})`);
+    return percentile;
+  } catch (error) {
+    console.warn('[Traceon] Real percentile computation failed:', error instanceof Error ? error.message : error);
+    return undefined;
+  }
 }
 
 /**

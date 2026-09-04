@@ -105,6 +105,104 @@ export interface RepoQualitySignal {
   directoryDepth: number;
   hasModularStructure: boolean; // ≥3 distinct top-level directories
   languages: Record<string, number>; // language → bytes
+  // ─── Deep static-analysis evidence (optional; set when the repo archive is parsed) ───
+  deepAnalysis?: boolean;
+  testToCodeRatio?: number;      // test LOC / source LOC
+  typeCoverage?: number;         // 0–1: typed params/returns/vars across TS/JS functions
+  commentDensity?: number;       // 0–1: comment lines / code lines
+  meanFunctionLength?: number;   // average statements per function
+  hasHighTodoDensity?: boolean;  // TODO/FIXME/HACK markers exceed 1 per 200 LOC
+  cyclomaticComplexity?: number; // Average CC per function
+  highComplexityRatio?: number;  // Ratio of functions with CC > 10 (0–1)
+  maintainabilityIndex?: number; // 0–100 MI scale
+  securityFlags?: SecurityFlags;
+  errorHandlingRatio?: number;   // try-catch blocks to async/await ratio
+  manifestFiles?: ManifestFileEntry[];
+}
+
+export interface SecurityFlags {
+  hardcodedSecrets: number;
+  unsafeCalls: number;
+  insecureCrypto: number;
+  rawSqlConcatenation: number;
+}
+
+export interface ManifestFileEntry {
+  filename: string;
+  content: string;
+}
+
+export interface DeepMetrics {
+  repoName: string;
+  deepAnalysis: boolean;
+  testToCodeRatio?: number;
+  typeCoverage?: number;
+  commentDensity?: number;
+  meanFunctionLength?: number;
+  hasHighTodoDensity?: boolean;
+  cyclomaticComplexity?: number;
+  highComplexityRatio?: number;
+  maintainabilityIndex?: number;
+  securityFlags?: SecurityFlags;
+  errorHandlingRatio?: number;
+  manifestFiles?: ManifestFileEntry[];
+}
+
+// ─── Enriched Profile Fetcher Types ───
+
+export interface GitHubUser {
+  login: string;
+  avatar_url: string;
+  name: string | null;
+  bio: string | null;
+  public_repos: number;
+  followers: number;
+  following: number;
+  created_at: string;
+}
+
+export interface GitHubRepo {
+  name: string;
+  description: string | null;
+  stargazers_count: number;
+  forks_count: number;
+  language: string | null;
+  topics: string[];
+  created_at: string;
+  updated_at: string;
+  pushed_at: string;
+  size: number;
+  fork: boolean;
+  owner: { login: string };
+  html_url: string;
+  archived: boolean;
+  open_issues_count: number;
+  has_wiki: boolean;
+  default_branch: string;
+}
+
+export interface CommitSample {
+  repoName: string;
+  message: string;
+  date: string;
+}
+
+export interface EnrichedProfileData {
+  user: GitHubUser;
+  filteredRepos: FilteredRepo[];
+  allRepos: GitHubRepo[];
+  languageBytes: Record<string, number>;
+  recentCommits: CommitSample[];
+  readmeSnippets: Record<string, string>;
+  commitFrequency: { last30Days: number; last90Days: number; last365Days: number; activeDaysLastYear: number };
+  pullRequestActivity: { totalPRsOpened: number; totalPRsMerged: number; externalPRsMerged: number; prReviewsDone: number };
+  issueActivity: { totalOpened: number; externalIssues: number };
+  repoQualitySignals: RepoQualitySignal[];
+  accountAge: { years: number; months: number };
+  totalStarsReceived: number;
+  totalForksReceived: number;
+  orgsCount: number;
+  detectedManifests: ManifestFileEntry[];
 }
 
 // ─── Complete Analysis Output ───

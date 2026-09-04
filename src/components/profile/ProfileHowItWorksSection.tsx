@@ -13,8 +13,8 @@ const steps = [
     },
     {
         id: '02',
-        title: 'LLM Execution',
-        description: 'Raw telemetry is parsed and fed into isolated Groq Llama 3.3 models. The AI evaluates architecture and hygiene against rigorous rubrics.',
+        title: 'Deterministic Scoring',
+        description: 'Repository archives are downloaded and parsed with the TypeScript compiler. Every score is computed from measurable code evidence — no AI guesses.',
         icon: <Zap className="w-8 h-8 text-amber" />
     },
     {

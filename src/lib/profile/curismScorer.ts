@@ -1,6 +1,6 @@
 import type { ACIDBreakdown, CURISMScores, FilteredRepo, RepoQualitySignal } from './types';
 
-const clamp = (value: number, min = 0, max = 10) => Math.min(max, Math.max(min, value));
+const clamp = (value: number, min = 0, max = 10) => Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min;
 const round = (value: number) => Math.round(clamp(value) * 10) / 10;
 
 function observedSignals(signals: RepoQualitySignal[]): RepoQualitySignal[] {
@@ -13,26 +13,85 @@ function ratio<T>(items: T[], predicate: (item: T) => boolean): number {
   return items.length ? items.filter(predicate).length / items.length : 0;
 }
 
-export function computeReliability(repoSignals: RepoQualitySignal[], avgCommitMessageLength: number): number {
+function computeReliability(repoSignals: RepoQualitySignal[], avgCommitMessageLength: number): number {
   const signals = observedSignals(repoSignals);
   if (!signals.length) return 0;
   const commitQuality = avgCommitMessageLength >= 50 ? 1 : avgCommitMessageLength >= 30 ? 0.65 : avgCommitMessageLength >= 15 ? 0.35 : 0.1;
+  const deep = signals.filter(signal => signal.deepAnalysis);
+  // File presence is weak evidence; measured test-to-source ratio is strong
+  // evidence and partially replaces it when available.
+  const testEvidence = deep.length
+    ? ratio(deep, signal => (signal.testToCodeRatio ?? 0) >= 0.2) * 2.5 + ratio(deep, signal => signal.hasTests) * 1
+    : ratio(signals, signal => signal.hasTests) * 3.5;
+
+  let complexityAdjustment = 0;
+  let errorHandlingBoost = 0;
+
+  if (deep.length) {
+    const deepWithCC = deep.filter(signal => typeof signal.cyclomaticComplexity === 'number');
+    if (deepWithCC.length) {
+      const avgCC = deepWithCC.reduce((sum, s) => sum + s.cyclomaticComplexity!, 0) / deepWithCC.length;
+      if (avgCC <= 6) {
+        complexityAdjustment += 1.0;
+      } else if (avgCC > 12) {
+        complexityAdjustment -= 1.5;
+      }
+    }
+
+    const deepWithHCR = deep.filter(signal => typeof signal.highComplexityRatio === 'number');
+    if (deepWithHCR.length) {
+      const avgHCR = deepWithHCR.reduce((sum, s) => sum + s.highComplexityRatio!, 0) / deepWithHCR.length;
+      if (avgHCR > 0.25) {
+        complexityAdjustment -= 1.0;
+      }
+    }
+
+    const deepWithEH = deep.filter(signal => typeof signal.errorHandlingRatio === 'number');
+    if (deepWithEH.length) {
+      const avgEH = deepWithEH.reduce((sum, s) => sum + s.errorHandlingRatio!, 0) / deepWithEH.length;
+      if (avgEH >= 0.5) {
+        errorHandlingBoost += 0.5;
+      }
+    }
+  }
+
   return round(
     1
-    + ratio(signals, signal => signal.hasTests) * 3.5
+    + testEvidence
     + ratio(signals, signal => signal.hasCI) * 2
     + ratio(signals, signal => signal.hasPrettierOrLint) * 1.5
     + ratio(signals, signal => signal.hasGitignore)
-    + commitQuality * 1.5,
+    + commitQuality * 1.5
+    + complexityAdjustment
+    + errorHandlingBoost,
   );
 }
 
-export function computeSecurity(repoSignals: RepoQualitySignal[]): number {
+function computeSecurity(repoSignals: RepoQualitySignal[]): number {
   const signals = observedSignals(repoSignals);
   if (!signals.length) return 0;
   const dependencyRepos = signals.filter(signal => signal.hasDependencyManifest);
   const lockfileRatio = dependencyRepos.length ? ratio(dependencyRepos, signal => signal.hasLockfile) : 0;
   const envLeakPenalty = signals.filter(signal => signal.hasEnvCommitted).length * 3;
+
+  const deep = signals.filter(signal => signal.deepAnalysis);
+  let deepSecurityPenalty = 0;
+  if (deep.length) {
+    const repoPenalties = deep.map(signal => {
+      const flags = signal.securityFlags;
+      if (!flags) return 0;
+      return (
+        (flags.hardcodedSecrets ?? 0) * 2.5 +
+        (flags.unsafeCalls ?? 0) * 1.5 +
+        (flags.rawSqlConcatenation ?? 0) * 1.5 +
+        (flags.insecureCrypto ?? 0) * 1.0
+      );
+    });
+    const avgPenalty = repoPenalties.reduce((sum, p) => sum + p, 0) / deep.length;
+    const maxPenalty = Math.max(0, ...repoPenalties);
+    deepSecurityPenalty = Math.min(6, avgPenalty * 0.5 + maxPenalty * 0.5);
+  }
+
   return round(
     3
     + ratio(signals, signal => signal.hasGitignore) * 1.5
@@ -40,11 +99,12 @@ export function computeSecurity(repoSignals: RepoQualitySignal[]): number {
     + ratio(signals, signal => signal.hasEnvExample)
     + ratio(signals, signal => signal.hasSecurityPolicy) * 2
     + ratio(signals, signal => signal.hasCI)
-    - envLeakPenalty,
+    - envLeakPenalty
+    - deepSecurityPenalty,
   );
 }
 
-export function computeMaintainability(repoSignals: RepoQualitySignal[]): number {
+function computeMaintainability(repoSignals: RepoQualitySignal[]): number {
   const signals = observedSignals(repoSignals);
   if (!signals.length) return 0;
   const documentation = signals.reduce((sum, signal) => sum
@@ -52,11 +112,30 @@ export function computeMaintainability(repoSignals: RepoQualitySignal[]): number
     + (signal.readmeWordCount >= 200 ? 0.5 : 0)
     + (signal.readmeHasInstallInstructions ? 0.5 : 0)
     + (signal.readmeHasUsageExamples ? 0.5 : 0), 0) / signals.length;
+  // Measured code-quality evidence (long functions, dead-code markers, MI) is
+  // stronger than file-presence heuristics and partially replaces it.
+  const deep = signals.filter(signal => signal.deepAnalysis);
+  let codeQuality: number;
+  if (deep.length) {
+    const deepWithMI = deep.filter(s => typeof s.maintainabilityIndex === 'number');
+    const avgMI = deepWithMI.length
+      ? deepWithMI.reduce((sum, s) => sum + s.maintainabilityIndex!, 0) / deepWithMI.length
+      : 0;
+    const miWeight = deepWithMI.length ? 2.0 * (avgMI / 100) : 0;
+
+    codeQuality = miWeight
+      + ratio(deep, signal => (signal.meanFunctionLength ?? 0) > 0 && (signal.meanFunctionLength ?? 99) <= 40) * 1.0
+      + ratio(deep, signal => (signal.commentDensity ?? 0) >= 0.08) * 0.5
+      + ratio(deep, signal => !signal.hasHighTodoDensity) * 0.5;
+  } else {
+    codeQuality = ratio(signals, signal => signal.hasPrettierOrLint) * 1.5;
+  }
+
   return round(
     1
     + documentation * 1.5
     + ratio(signals, signal => signal.hasModularStructure) * 2.5
-    + ratio(signals, signal => signal.hasPrettierOrLint) * 1.5
+    + codeQuality
     + ratio(signals, signal => signal.hasContributing)
     + ratio(signals, signal => signal.hasApiDocs) * 1.5,
   );
@@ -95,11 +174,32 @@ function computeArchitectureScore(repoSignals: RepoQualitySignal[]): number {
   const signals = observedSignals(repoSignals);
   if (!signals.length) return 0;
   return round(
-    ratio(signals, signal => signal.hasModularStructure) * 4
-    + ratio(signals, signal => signal.directoryDepth >= 2 && signal.directoryDepth <= 8) * 2
-    + ratio(signals, signal => signal.hasEnvExample && !signal.hasEnvCommitted) * 1.5
-    + ratio(signals, signal => signal.hasCI) * 1.5
-    + ratio(signals, signal => signal.hasDockerfile) * 1,
+    ratio(signals, signal => signal.hasModularStructure) * 3
+    + ratio(signals, signal => signal.directoryDepth >= 2 && signal.directoryDepth <= 8) * 1.5
+    + ratio(signals, signal => signal.hasEnvExample && !signal.hasEnvCommitted) * 1
+    + ratio(signals, signal => signal.hasCI) * 1
+    + ratio(signals, signal => signal.hasDockerfile) * 1
+    + codeEvidenceBoost(signals) * 0.5,
+  );
+}
+
+/**
+ * Deep static-analysis evidence collected from downloaded repository archives.
+ * Presence alone is weak evidence; these ratios measure how the code is
+ * actually written (type coverage, test-to-code ratio, comment density,
+ * dead-code markers), so inflated files cannot game the score.
+ */
+function codeEvidenceBoost(signals: RepoQualitySignal[]): number {
+  const deep = signals.filter(signal => signal.deepAnalysis);
+  if (!deep.length) return 0;
+  return round(
+    ratio(deep, signal => (signal.testToCodeRatio ?? 0) >= 0.2) * 1.5
+    + ratio(deep, signal => (signal.typeCoverage ?? 0) >= 0.6) * 1
+    + ratio(deep, signal => (signal.commentDensity ?? 0) >= 0.08) * 1
+    + ratio(deep, signal => typeof signal.meanFunctionLength === 'number' && signal.meanFunctionLength > 0 && signal.meanFunctionLength <= 40) * 1
+    + ratio(deep, signal => !signal.hasHighTodoDensity) * 0.5
+    + ratio(deep, signal => (signal.maintainabilityIndex ?? 0) >= 65) * 1
+    + ratio(deep, signal => signal.cyclomaticComplexity !== undefined && signal.cyclomaticComplexity <= 6) * 0.5,
   );
 }
 
@@ -122,6 +222,8 @@ function computeInnovationScore(repos: FilteredRepo[]): number {
   if (!repos.length) return 0;
   const text = combinedRepoText(repos);
   const novelTopics = ['machine-learning', 'deep-learning', 'blockchain', 'web3', 'iot', 'webassembly', 'wasm', 'robotics', 'computer-vision', 'nlp', 'generative-ai', 'llm'];
+  // A fork's purpose is unknown; treat it as original work only when its own
+  // description or topics say something specific.
   const novelty = novelTopics.filter(topic => text.includes(topic)).length;
   const tutorialTerms = /\b(?:clone|tutorial|course|bootcamp|exercise|practice|template|starter|boilerplate)\b/;
   const originalRatio = ratio(repos, repo => !tutorialTerms.test(`${repo.name} ${repo.description || ''}`.toLowerCase()));
