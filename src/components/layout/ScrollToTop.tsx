@@ -34,10 +34,10 @@ export default function ScrollToTop() {
     return (
         <button
             onClick={scrollToTop}
-            className="fixed bottom-24 right-5 sm:right-8 z-50 p-3 rounded-full bg-emerald text-white shadow-lg hover:bg-emerald/90 transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald/50"
+            className="fixed bottom-6 right-6 sm:right-8 z-50 p-2.5 rounded-full bg-[#111114]/80 border border-[#27272a] text-[#a1a1aa] hover:text-[#10b981] hover:border-[#10b981]/50 backdrop-blur-md shadow-2xl transition-all duration-300 hover:scale-105 focus:outline-none focus:ring-1 focus:ring-[#10b981]/50 cursor-pointer"
             aria-label="Scroll to top"
         >
-            <ArrowUp size={20} />
+            <ArrowUp size={18} />
         </button>
     );
 }

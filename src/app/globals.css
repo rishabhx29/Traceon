@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* ─── Obsidian Matrix Palette ─── */
+  /* ΓöÇΓöÇΓöÇ Obsidian Matrix Palette ΓöÇΓöÇΓöÇ */
   --color-surface-0: #000000;
   --color-surface-1: #09090b;
   /* zinc-950 */
@@ -32,9 +32,14 @@
   --color-stroke-subtle: #18181b;
   /* zinc-900 */
 
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-display: 'Space Grotesk', system-ui, sans-serif;
-  --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
+  --color-indigo: #6366f1;
+  /* indigo-500 */
+  --color-text-4: #52525b;
+  /* zinc-600 */
+
+  --font-body: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @layer base {
@@ -42,26 +47,28 @@
     border-color: var(--color-stroke);
   }
 
+  /* ──── Accessibility: visible keyboard focus everywhere (WCAG 2.4.7) ──── */
+  :focus-visible {
+    outline: 2px solid var(--color-emerald);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* ──── Accessibility: honor reduced-motion preference (WCAG 2.3.3) ──── */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   html {
     scroll-behavior: smooth;
     color-scheme: dark;
-  }
-
-  html[data-theme="light"] {
-    color-scheme: light;
-    --color-surface-0: #ffffff;
-    --color-surface-1: #f8fafc;
-    --color-surface-2: #f1f5f9;
-    --color-surface-3: #e2e8f0;
-    --color-surface-4: #cbd5e1;
-
-    --color-text-0: #0f172a;
-    --color-text-1: #1e293b;
-    --color-text-2: #475569;
-    --color-text-3: #64748b;
-
-    --color-stroke: #cbd5e1;
-    --color-stroke-subtle: #e2e8f0;
   }
 
   body {
@@ -70,7 +77,7 @@
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   h1,
@@ -105,7 +112,7 @@
     background: var(--color-text-3);
   }
 
-  /* ─── React Flow Overrides ─── */
+  /* ΓöÇΓöÇΓöÇ React Flow Overrides ΓöÇΓöÇΓöÇ */
   .react-flow__controls-button {
     background-color: var(--color-surface-2) !important;
     border-bottom: 1px solid var(--color-stroke) !important;
@@ -127,7 +134,7 @@
 
 @layer components {
 
-  /* ─── Noise texture overlay ─── */
+  /* ΓöÇΓöÇΓöÇ Noise texture overlay ΓöÇΓöÇΓöÇ */
   .noise {
     position: relative;
   }
@@ -141,13 +148,13 @@
     z-index: 1;
   }
 
-  /* ─── Dot matrix background ─── */
+  /* ΓöÇΓöÇΓöÇ Dot matrix background ΓöÇΓöÇΓöÇ */
   .dot-matrix {
     background-image: radial-gradient(circle, var(--color-stroke) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 
-  /* ─── Card variants ─── */
+  /* ΓöÇΓöÇΓöÇ Card variants ΓöÇΓöÇΓöÇ */
   .card {
     background: var(--color-surface-2);
     border: 1px solid var(--color-stroke);
@@ -166,7 +173,7 @@
     border-color: var(--color-emerald-dim);
   }
 
-  /* ─── Accent text ─── */
+  /* ΓöÇΓöÇΓöÇ Accent text ΓöÇΓöÇΓöÇ */
   .text-gradient {
     background: linear-gradient(135deg, var(--color-text-1), var(--color-text-3));
     background-clip: text;
@@ -174,7 +181,7 @@
     -webkit-text-fill-color: transparent;
   }
 
-  /* ─── Monospace label ─── */
+  /* ΓöÇΓöÇΓöÇ Monospace label ΓöÇΓöÇΓöÇ */
   .mono-label {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -183,7 +190,7 @@
     color: var(--color-text-2);
   }
 
-  /* ─── Terminal-style input ─── */
+  /* ΓöÇΓöÇΓöÇ Terminal-style input ΓöÇΓöÇΓöÇ */
   .terminal-input {
     background: var(--color-surface-1);
     border: 1px solid var(--color-stroke);
@@ -206,7 +213,7 @@
     box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
   }
 
-  /* ─── Primary CTA ─── */
+  /* ΓöÇΓöÇΓöÇ Primary CTA ΓöÇΓöÇΓöÇ */
   .btn-cta {
     display: inline-flex;
     align-items: center;
@@ -232,7 +239,7 @@
     transform: translateY(0);
   }
 
-  /* ─── Ghost button ─── */
+  /* ΓöÇΓöÇΓöÇ Ghost button ΓöÇΓöÇΓöÇ */
   .btn-ghost {
     display: inline-flex;
     align-items: center;
@@ -254,7 +261,7 @@
     background: var(--color-surface-2);
   }
 
-  /* ─── Keyboard shortcut pill ─── */
+  /* ΓöÇΓöÇΓöÇ Keyboard shortcut pill ΓöÇΓöÇΓöÇ */
   .kbd {
     display: inline-flex;
     align-items: center;
@@ -271,7 +278,7 @@
     line-height: 1;
   }
 
-  /* ─── Status dot ─── */
+  /* ΓöÇΓöÇΓöÇ Status dot ΓöÇΓöÇΓöÇ */
   .status-dot {
     width: 6px;
     height: 6px;
@@ -280,7 +287,16 @@
     box-shadow: 0 0 8px var(--color-emerald);
   }
 
-  /* ─── Section divider ─── */
+  /* Text glow utilities (terminal success lines) */
+  .text-shadow-glow-emerald {
+    text-shadow: 0 0 12px rgba(16, 185, 129, 0.55), 0 0 24px rgba(16, 185, 129, 0.25);
+  }
+
+  .text-shadow-glow-amber {
+    text-shadow: 0 0 12px rgba(245, 158, 11, 0.55), 0 0 24px rgba(245, 158, 11, 0.25);
+  }
+
+  /* ΓöÇΓöÇΓöÇ Section divider ΓöÇΓöÇΓöÇ */
   .divider {
     width: 100%;
     height: 1px;
@@ -288,7 +304,7 @@
   }
 }
 
-/* ─── Animations ─── */
+/* ΓöÇΓöÇΓöÇ Animations ΓöÇΓöÇΓöÇ */
 @keyframes terminal-blink {
 
   0%,
@@ -375,7 +391,7 @@
   animation-delay: 0.6s;
 }
 
-/* ─── Extra Keyframes ─── */
+/* ΓöÇΓöÇΓöÇ Extra Keyframes ΓöÇΓöÇΓöÇ */
 @keyframes slide-in-right {
   from {
     opacity: 0;
@@ -439,26 +455,26 @@
   animation: marquee 30s linear infinite;
 }
 
-/* ─── Mobile safe areas ─── */
+/* ΓöÇΓöÇΓöÇ Mobile safe areas ΓöÇΓöÇΓöÇ */
 @supports (padding: max(0px)) {
   .safe-bottom {
     padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 }
 
-/* ─── Page transition ─── */
+/* ΓöÇΓöÇΓöÇ Page transition ΓöÇΓöÇΓöÇ */
 main {
   animation: fade-up 0.4s ease-out both;
 }
 
-/* ─── Focus ring ─── */
+/* ΓöÇΓöÇΓöÇ Focus ring ΓöÇΓöÇΓöÇ */
 :focus-visible {
   outline: 2px solid var(--color-emerald);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* ─── Reduced motion ─── */
+/* ΓöÇΓöÇΓöÇ Reduced motion ΓöÇΓöÇΓöÇ */
 @media (prefers-reduced-motion: reduce) {
 
   *,
