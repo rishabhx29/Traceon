@@ -6,6 +6,7 @@ import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/layout/ScrollToTop";
 import { NextAuthProvider } from "@/components/providers/NextAuthProvider";
 import { SmoothScrollProvider } from "@/components/providers/SmoothScrollProvider";
+import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -127,6 +128,7 @@ export default function RootLayout({
             <ScrollToTop />
           </SmoothScrollProvider>
         </NextAuthProvider>
+        <Analytics />
       </body>
     </html>
   );
