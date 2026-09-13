@@ -5,7 +5,7 @@ import { motion, useInView, AnimatePresence } from 'framer-motion';
 import { Copy, Check } from 'lucide-react';
 
 const installCommands = {
-    npm: 'npx traceon analyze <repo-url>',
+    npm: 'npx traceon-analyzer',
     curl: 'curl -sSL traceon.dev/install | sh',
     docker: 'docker run -it traceon/cli analyze <repo>',
 };

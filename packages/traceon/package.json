@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "commonjs",
   "bin": {
+    "traceon-analyzer": "dist/cli.js",
     "traceon": "dist/cli.js"
   },
   "files": [

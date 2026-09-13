@@ -127,7 +127,7 @@ export default function DocsPage() {
                                 Run Traceon directly inside your terminal or CI/CD pipeline:
                             </p>
                             <div className="p-3.5 rounded-lg bg-surface-0 border border-stroke font-mono text-sm text-emerald flex items-center justify-between">
-                                <code>npx traceon@latest init</code>
+                                <code>npx traceon-analyzer</code>
                             </div>
                             <p className="text-xs text-text-3">
                                 Automatically scans project ASTs, validates cyclic rules, and generates a local topology report.

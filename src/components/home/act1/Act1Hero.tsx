@@ -31,7 +31,7 @@ export function Act1Hero() {
   const [reducedMotion, setReducedMotion] = useState(false);
 
   const handleCliCopy = () => {
-    navigator.clipboard.writeText('npx traceon@latest init');
+    navigator.clipboard.writeText('npx traceon-analyzer');
     setCliCopied(true);
     setTimeout(() => setCliCopied(false), 2000);
   };
@@ -199,7 +199,7 @@ export function Act1Hero() {
             {/* Quick CLI Pill */}
             <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-full bg-zinc-900/80 border border-zinc-800/90 backdrop-blur-md mb-8 group hover:border-zinc-700 transition-colors">
               <Terminal className="w-4 h-4 text-emerald-400" />
-              <code className="text-xs font-mono text-zinc-300">npx traceon@latest</code>
+              <code className="text-xs font-mono text-zinc-300">npx traceon-analyzer</code>
               <button
                 onClick={handleCliCopy}
                 className="p-1 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer active:scale-[0.92]"
