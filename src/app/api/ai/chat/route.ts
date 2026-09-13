@@ -3,6 +3,9 @@ import { streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGroq } from '@ai-sdk/groq';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { rateLimit } from '@/lib/rate-limit';
 import connectDB from '@/lib/db/connection';
 import AnalysisResult from '@/lib/db/models/AnalysisResult';
 import { getCriticalModuleIds } from '@/lib/analyzer/graph/importance';
@@ -23,10 +26,43 @@ const google = createGoogleGenerativeAI({
 
 export async function POST(req: NextRequest) {
     try {
+        // 0a. Authentication guard — AI chat is a premium feature tied to analyzed graphs
+        const session = await getServerSession(authOptions);
+        if (!session) {
+            return new NextResponse(
+                JSON.stringify({ error: 'Unauthorized. Please sign in to use Traceon AI.' }),
+                { status: 401, headers: { 'Content-Type': 'application/json' } }
+            );
+        }
+
+        // 0b. Rate Limiting (20 requests per 5 minutes per IP)
+        const ip = req.headers.get('x-forwarded-for') ?? '127.0.0.1';
+        const rateLimitResult = await rateLimit(`ai-chat:${ip}`, 20, 5 * 60 * 1000);
+        if (!rateLimitResult.success) {
+            return new NextResponse(
+                JSON.stringify({ error: 'Too many AI requests. Please try again later.' }),
+                {
+                    status: 429,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-RateLimit-Limit': rateLimitResult.limit.toString(),
+                        'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+                        'X-RateLimit-Reset': rateLimitResult.reset.toString(),
+                    },
+                }
+            );
+        }
+
         const { messages, repoId, model } = await req.json();
 
-        // 0. Enforce strict character limits on input to prevent token/quota exhaustion
-        const inputString = JSON.stringify(messages || []);
+        // 0c. Enforce strict character limits on input to prevent token/quota exhaustion
+        if (!Array.isArray(messages)) {
+            return new NextResponse(
+                JSON.stringify({ error: 'Invalid messages payload.' }),
+                { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
+        }
+        const inputString = JSON.stringify(messages);
         if (inputString.length > 20000) {
             return new NextResponse(
                 JSON.stringify({ error: 'Message payload too large (exceeds 20,000 characters). Please clear some chat history or shorten your query.' }),

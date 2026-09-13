@@ -122,6 +122,7 @@ svg{width:100%;height:100%}
 const TYPE_COLORS = {entry:'#f59e0b',component:'#8b5cf6',utility:'#06b6d4',module:'#10b981',config:'#f97316',other:'#64748b'};
 const nodes = ${nodesJSON};
 const edges = ${edgesJSON};
+const metrics = ${metricsJSON};
 
 // Simple force-directed layout
 const width = window.innerWidth;
