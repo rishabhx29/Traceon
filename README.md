@@ -4,12 +4,11 @@
 
 # Traceon
 
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Rishabhworkspace/Traceon?utm_source=oss&utm_medium=github&utm_campaign=Rishabhworkspace%2FTraceon&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+[![npm version](https://img.shields.io/npm/v/traceon-analyzer?style=flat-square&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/traceon-analyzer)
+[![npm downloads](https://img.shields.io/npm/dt/traceon-analyzer?style=flat-square&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/traceon-analyzer)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/rishabhx29/Traceon?utm_source=oss&utm_medium=github&utm_campaign=rishabhx29%2FTraceon&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 **Two powerful lenses. One unified platform.**
-
-## Contributing
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup guide and contribution guidelines.
 
 [![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://typescriptlang.org/)
@@ -19,9 +18,11 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup guide and contribution guidel
 [![Groq](https://img.shields.io/badge/Groq_Llama_3.3-F54E00?style=flat-square&logo=meta&logoColor=white)](https://groq.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
-[Features](#features) · [Getting Started](#getting-started) · [Architecture](#architecture) · [API Reference](#api-reference) · [Roadmap](#roadmap)
+[Features](#features) · [CLI](#traceon-cli) · [Getting Started](#getting-started) · [Architecture](#architecture) · [API Reference](#api-reference) · [Roadmap](#roadmap)
 
-[Live Demo](https://traceon.vercel.app) · [Report Bug](https://github.com/Rishabhworkspace/Traceon/issues) · [Request Feature](https://github.com/Rishabhworkspace/Traceon/issues)
+[Live Demo](https://traceon.vercel.app) · [npm Package](https://www.npmjs.com/package/traceon-analyzer) · [Report Bug](https://github.com/rishabhx29/Traceon/issues) · [Request Feature](https://github.com/rishabhx29/Traceon/issues)
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the setup guide and contribution guidelines.
 
 </div>
 
@@ -31,19 +32,95 @@ You just joined a team, inherited a monorepo, or found an open-source project yo
 
 It is a unified analysis platform that maps any codebase into an interactive dependency graph and decodes any GitHub developer's engineering capability through LLM-powered analysis — built for open-source contributors navigating unfamiliar repositories, developers onboarding onto new teams, engineering leads evaluating architecture health, and hiring managers who need signal beyond résumés and star counts.
 
-### Repository Analyzer
+It ships in two forms, sharing the same analysis core:
 
-Paste any GitHub URL (or upload a ZIP). Traceon clones the repository, spawns worker threads to parse every source file into an Abstract Syntax Tree via the TypeScript Compiler API, constructs a full dependency graph, and renders it as an interactive force-directed visualization in your browser. Select any node to see its impact score (0–100), blast radius, and circular dependency chains. Compare architectural snapshots across commit history with visual red/green diffs. Export the graph as PNG, SVG, PDF, or a standalone HTML viewer you can drop into a wiki.
+| | Traceon Web | Traceon CLI |
+|---|---|---|
+| **Install** | Hosted / self-hosted Next.js app | `npx traceon-analyzer` — nothing to install |
+| **Input** | GitHub URL or ZIP upload | Any local directory |
+| **Requires** | MongoDB, API keys (for full features) | Node.js ≥ 18 only |
+| **Best for** | Persistent dashboards, history, Profile DNA, AI chat | One-shot local analysis, CI pipelines, offline use |
+| **Privacy** | Code is cloned and parsed server-side | Code never leaves your machine |
 
-### Profile DNA Checker
+### The three tools
 
-Enter any GitHub username. Traceon fetches their public repositories, language byte distributions, recent commits, and README samples — then feeds the raw telemetry into Groq's Llama 3.3 70B model with a rigorous staff-engineer rubric. The result is a multi-dimensional "Engineering DNA" dashboard: six scored axes (Reliability, Security, Maintainability, Uniqueness, Influence, Contribution), an archetype classification, a domain radar chart, a code quality report with strengths and weaknesses, and a Squad Matcher that lets you paste your team's required tech stack to get an instant compatibility percentage.
+**Repository Analyzer (web)** — Paste any GitHub URL (or upload a ZIP). Traceon clones the repository, spawns worker threads to parse every source file into an Abstract Syntax Tree via the TypeScript Compiler API, constructs a full dependency graph, and renders it as an interactive force-directed visualization in your browser. Select any node to see its impact score (0–100), blast radius, and circular dependency chains. Compare architectural snapshots across commit history with visual red/green diffs. Export the graph as PNG, SVG, PDF, or a standalone HTML viewer you can drop into a wiki.
+
+**Traceon CLI — analyze any local codebase in seconds** — No signup, no database, no server required. Run one command inside any project:
+
+```bash
+npx traceon-analyzer
+```
+
+It scans your project, parses every source file into an AST, builds the dependency graph, and prints a metrics report — then launches a local interactive graph viewer in your browser. Everything runs 100% locally; your code never leaves your machine. Full usage in the [CLI section](#traceon-cli) below.
+
+**Profile DNA Checker** — Enter any GitHub username. Traceon fetches their public repositories, language byte distributions, recent commits, and README samples — then feeds the raw telemetry into Groq's Llama 3.3 70B model with a rigorous staff-engineer rubric. The result is a multi-dimensional "Engineering DNA" dashboard: six scored axes (Reliability, Security, Maintainability, Uniqueness, Influence, Contribution), an archetype classification, a domain radar chart, a code quality report with strengths and weaknesses, and a Squad Matcher that lets you paste your team's required tech stack to get an instant compatibility percentage.
 
 <div align="center">
   <img src="public/graph-demo.png" alt="Traceon — Interactive dependency graph with impact analysis" width="90%" />
   <br />
   <sub>Repository Analyzer — interactive dependency graph with impact analysis panel</sub>
 </div>
+
+---
+
+## Traceon CLI
+
+The fastest way to use Traceon — one command, zero install, zero config:
+
+```bash
+npx traceon-analyzer
+```
+
+Point it at any project directory. It analyzes the codebase locally (same scanner → parser → graph → impact core as the web app), prints a metrics report to your terminal, and opens an interactive graph viewer in your browser. **Your code never leaves your machine** — analysis runs entirely in local Node.js processes, and the viewer binds to `127.0.0.1` only.
+
+### Usage
+
+```bash
+npx traceon-analyzer                       # analyze current directory + open viewer
+npx traceon-analyzer ./packages/api        # analyze a subdirectory
+npx traceon-analyzer --json > report.json  # machine-readable output for CI
+npx traceon-analyzer --no-open --port 5000 # custom port, no auto browser open
+npx traceon-analyzer --help                # all options
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `path` | Directory to analyze (default: current directory) |
+| `--json` | Print machine-readable JSON report to stdout and exit (no viewer) |
+| `--no-open` | Start the viewer server but don't open the browser |
+| `--port <n>` | Preferred port for the local viewer (default `4323`; auto-increments if busy) |
+| `--help`, `-h` | Show help |
+
+### What you get
+
+**Terminal report** — file counts, dependency density, file type distribution, critical modules (most depended-upon files), and circular dependency chains — in under a second for small projects, seconds for large monorepos.
+
+**Interactive viewer** (`http://localhost:4323`) — a local-only web app with:
+
+- Force-directed dependency graph (React Flow, dark theme) with nodes color-coded by type
+- Click any file to see its **impact score (0–100)**, risk level, and blast radius — every direct and transitive dependent lights up
+- Search to filter files by name or path
+- Circular dependency detection
+- Workspace / monorepo package boundaries
+
+### JSON mode (CI-friendly)
+
+`--json` emits a single JSON document with the full graph — nodes (type, LOC, imports, exports, in/out degree), edges, and metrics (critical modules, circular cycles, file type distribution, workspace info). Ideal for CI pipelines and scripts:
+
+```bash
+npx traceon-analyzer --json > report.json
+```
+
+### Requirements & install
+
+- Node.js ≥ 18
+- Published as [`traceon-analyzer`](https://www.npmjs.com/package/traceon-analyzer) on npm — `npx` works with no install; `npm i -D traceon-analyzer` works for pinned CI usage
+
+> [!TIP]
+> The CLI lives in [`packages/traceon`](./packages/traceon) and is built with esbuild into a single bundled file — no transitive runtime deps for consumers. To build it from this repo: `npm run build:cli` at the root.
 
 ---
 
@@ -76,6 +153,15 @@ Enter any GitHub username. Traceon fetches their public repositories, language b
 - **24-hour result caching** — Analysis results are cached in MongoDB, so repeat lookups on the same username are instant.
 - **Trending profiles marquee** — Quick-launch analysis on prominent open-source developers.
 
+### Traceon CLI
+
+- **Zero-install usage** — `npx traceon-analyzer` works with nothing but Node.js ≥ 18.
+- **100% local & offline** — analysis runs entirely on your machine; the viewer binds to `127.0.0.1` only.
+- **Terminal metrics report** — file type distribution, critical modules, and circular dependency chains printed as ASCII charts.
+- **Interactive local viewer** — same React Flow graph experience, served from a single bundled CLI file.
+- **JSON export for CI** — `--json` emits the full graph for pipelines and scripts.
+- **Monorepo-aware** — detects npm/pnpm/yarn workspaces and annotates package boundaries.
+
 ### Platform
 
 - **Authentication** — Email/password, GitHub OAuth, Google OAuth, JWT sessions, and guest mode.
@@ -96,7 +182,7 @@ Enter any GitHub username. Traceon fetches their public repositories, language b
 ### Setup
 
 ```bash
-git clone https://github.com/Rishabhworkspace/Traceon.git
+git clone https://github.com/rishabhx29/Traceon.git
 cd Traceon
 npm install
 cp .env.example .env.local
@@ -252,6 +338,14 @@ src/
 │
 └── workers/
     └── parse-worker.js           # Worker thread for CPU-intensive AST parsing
+
+packages/
+└── traceon/                      # Standalone CLI (npx traceon-analyzer)
+    ├── src/cli/                  # CLI entry, arg parsing, terminal report
+    ├── src/analyzer/             # Local analyzer core (scan → parse → graph → impact)
+    ├── src/server/               # Local-only viewer server (port 4323)
+    ├── src/viewer/               # Bundled React Flow viewer UI
+    └── build.mjs                 # esbuild bundling (single-file CLI + embedded viewer)
 ```
 
 ---
@@ -318,6 +412,7 @@ src/
 - [x] Export graph as PNG/SVG/PDF and Interactive HTML
 - [x] **Profile DNA Checker** — LLM-powered engineering analysis from public GitHub data
 - [x] **Squad Matcher** — Stack compatibility scoring for hiring & team-building
+- [x] **Traceon CLI** — `npx traceon-analyzer` analyzes any local codebase offline with an interactive viewer
 - [ ] VS Code extension
 - [ ] Multi-language support (Python, Go, Rust)
 - [ ] Team collaboration features
@@ -326,7 +421,7 @@ src/
 
 <div align="center">
 
-**Built by [Rishabh](https://github.com/Rishabhworkspace)**
+**Built by [Rishabh](https://github.com/rishabhx29)**
 
 *Traceon — Because understanding code, and the people who write it, shouldn't require reading all of it.*
 
