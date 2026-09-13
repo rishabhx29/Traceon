@@ -281,7 +281,7 @@ export default function LoginPage() {
                     </p>
                     
                     <p className="text-center text-sm text-text-3 mt-4">
-                        Don't have an account? <Link href="/signup" className="text-emerald hover:text-emerald/80 transition-colors font-medium">Sign up</Link>
+                        Don&apos;t have an account? <Link href="/signup" className="text-emerald hover:text-emerald/80 transition-colors font-medium">Sign up</Link>
                     </p>
                 </motion.div>
             </div>

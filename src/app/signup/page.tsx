@@ -5,7 +5,7 @@ import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { ArrowRight, Loader2, UserPlus, Github, Chrome, Activity, Zap, ShieldCheck } from 'lucide-react';
+import { Loader2, UserPlus, Github, Chrome, Activity, Zap, ShieldCheck } from 'lucide-react';
 
 export default function SignupPage() {
     const router = useRouter();
