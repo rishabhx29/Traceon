@@ -31,9 +31,10 @@ export function ReanalyzeFlowButton({ username }: ReanalyzeFlowButtonProps) {
             // Successfully refreshed, reload page content
             router.refresh();
             window.location.reload();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error in re-analyze flow:', err);
-            setError(err.message || 'An error occurred during re-analysis');
+            const message = err instanceof Error ? err.message : 'An error occurred during re-analysis';
+            setError(message);
         } finally {
             setIsAnalyzing(false);
         }

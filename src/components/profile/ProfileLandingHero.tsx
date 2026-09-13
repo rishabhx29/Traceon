@@ -1,16 +1,25 @@
 // src/components/profile/ProfileLandingHero.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Fingerprint, Terminal, ArrowRight, Github, Activity } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 const TRENDING_PROFILES = ['gaearon', 'torvalds', 'sindresorhus', 'yyx990803', 'shuding', 't3dotgg'];
 
-export function ProfileLandingHero() {
-    const [username, setUsername] = useState('');
+export function ProfileLandingHero({ initialUsername = '' }: { initialUsername?: string }) {
+    const [username, setUsername] = useState(initialUsername);
     const router = useRouter();
+
+    // Auto-launch analysis when a username was passed via query param (e.g. from the home page command capsule)
+    useEffect(() => {
+        const prefill = initialUsername.trim().replace(/^@/, '');
+        if (!prefill) return;
+        const timer = setTimeout(() => router.push(`/profile/${prefill}`), 400);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -99,7 +108,9 @@ export function ProfileLandingHero() {
                         <div className="sm:hidden flex items-center text-text-3 font-mono text-lg select-none mr-2">
                             ~/
                         </div>
+                        <label htmlFor="profile-dna-username" className="sr-only">GitHub username to analyze</label>
                         <input
+                            id="profile-dna-username"
                             type="text"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}

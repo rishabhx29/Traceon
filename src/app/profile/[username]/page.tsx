@@ -1,6 +1,5 @@
-// src/app/profile/[username]/page.tsx
-import { Suspense } from 'react';
 import { Metadata } from 'next';
+import Link from 'next/link';
 import dbConnect from '@/lib/db/connection';
 import { ProfileAnalysis } from '@/lib/db/models/ProfileAnalysis';
 import { getServerSession } from 'next-auth';
@@ -10,7 +9,7 @@ import User from '@/lib/db/models/User';
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 import { notFound } from 'next/navigation';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { ProfileDashboardView } from '@/components/profile/ProfileDashboardView';
 import { getOrAnalyzeProfile } from '@/lib/profile/service';
@@ -19,9 +18,7 @@ import { UserNotFoundError, GitHubRateLimitError } from '@/lib/errors';
 import { ProfileData, ProfileDataSchema } from '@/lib/profile/types';
 import { ReanalyzeFlowButton } from '@/components/profile/ReanalyzeFlowButton';
 
-
-
-async function getProfileData(username: string): Promise<any> {
+async function getProfileData(username: string): Promise<ProfileData | { error: string }> {
     try {
         const result = await getOrAnalyzeProfile(username);
         return result.data;
@@ -163,7 +160,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
                     <AlertTriangle className="w-12 h-12 text-rose mx-auto mb-4" />
                     <h2 className="text-xl font-bold text-text-0 mb-2">Analysis Failed</h2>
                     <p className="text-sm text-text-2 font-mono mb-6">{data.error}</p>
-                    <a href="/" className="px-4 py-2 rounded-lg bg-surface-3 text-text-1 hover:text-text-0 transition-colors inline-block text-sm font-medium">Return Home</a>
+                    <Link href="/" className="px-4 py-2 rounded-lg bg-surface-3 text-text-1 hover:text-text-0 transition-colors inline-block text-sm font-medium">Return Home</Link>
                 </div>
             </main>
         );
@@ -219,7 +216,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ userna
                     <p className="text-sm text-text-2 font-mono mb-6">
                         We could not complete the AI assessment for this profile. They might have 0 public repositories or missing data.
                     </p>
-                    <a href="/" className="px-4 py-2 rounded-lg bg-surface-3 text-text-1 hover:text-text-0 transition-colors inline-block text-sm font-medium">Return Home</a>
+                    <Link href="/" className="px-4 py-2 rounded-lg bg-surface-3 text-text-1 hover:text-text-0 transition-colors inline-block text-sm font-medium">Return Home</Link>
                 </div>
             </main>
         );

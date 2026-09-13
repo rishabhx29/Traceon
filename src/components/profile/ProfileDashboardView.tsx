@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ErrorBoundary from '@/components/layout/ErrorBoundary';
-import { LayoutDashboard, Code2, Dna, ShieldAlert, Activity, Target } from 'lucide-react';
+import { LayoutDashboard, Code2, Dna, ShieldAlert, Target } from 'lucide-react';
 import { DomainExpertise } from '@/components/profile/DomainExpertise';
 import { TechStack } from '@/components/profile/TechStack';
 import { EngineeringDNA } from '@/components/profile/EngineeringDNA';

@@ -45,7 +45,7 @@ export function ProfileCTASection() {
                     transition={{ delay: 0.1 }}
                     className="text-lg md:text-xl text-text-2 mb-12 max-w-2xl mx-auto font-mono leading-relaxed"
                 >
-                    Stop guessing developers' skills based on stars. Start leveraging AI to get absolute algorithmic clarity on engineering talents.
+                    Stop guessing developers&apos; skills based on stars. Start leveraging AI to get absolute algorithmic clarity on engineering talents.
                 </motion.p>
 
                 <motion.button

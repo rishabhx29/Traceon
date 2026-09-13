@@ -2,7 +2,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Sparkles, Brain, Award, ShieldCheck, LineChart, Code2, GitCommit, SearchCheck, Layers } from 'lucide-react';
+import { Brain, LineChart, Code2, GitCommit } from 'lucide-react';
 
 export function ProfileFeaturesSection() {
     return (
@@ -51,7 +51,7 @@ export function ProfileFeaturesSection() {
                                 <div className="text-emerald mb-1 font-bold">class RepositoryAnalyzer &#123;</div>
                                 <div className="pl-4 mb-1">async analyze_architecture(repo) &#123;</div>
                                 <div className="pl-8 mb-1">const <span className="text-amber">patterns</span> = await detect_patterns();</div>
-                                <div className="pl-8 text-text-1 bg-amber/10 inline-block px-1 rounded-sm border border-amber/20 my-1">// Context extracted: CQRS, Event Sourcing</div>
+                                <div className="pl-8 text-text-1 bg-amber/10 inline-block px-1 rounded-sm border border-amber/20 my-1">{'// Context extracted: CQRS, Event Sourcing'}</div>
                                 <div className="pl-8 mt-1">return calculate_score(<span className="text-amber">patterns</span>);</div>
                                 <div className="pl-4">&#125;</div>
                                 <div>&#125;</div>
@@ -129,7 +129,7 @@ export function ProfileFeaturesSection() {
                         {/* Mock UI: Commit graph dots */}
                         <div className="flex flex-wrap gap-[6px] opacity-40 group-hover:opacity-100 transition-opacity">
                             {Array.from({length: 45}).map((_, i) => {
-                                const active = Math.random();
+                                const active = ((i * 17 + 7) % 100) / 100;
                                 return (
                                 <div key={i} className={`w-3.5 h-3.5 rounded-sm transition-colors duration-500 delay-${(i % 5) * 100} ${active > 0.75 ? 'bg-emerald shadow-[0_0_8px_rgba(16,185,129,0.5)]' : active > 0.4 ? 'bg-emerald-dim' : 'bg-surface-3'}`} />
                             )})}

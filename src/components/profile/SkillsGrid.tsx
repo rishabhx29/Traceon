@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Database, Globe, Cpu, ShieldCheck, TerminalSquare, Cloud, Hexagon, Code2, ChevronRight, Binary } from 'lucide-react';
+import { Database, Globe, Cpu, ShieldCheck, TerminalSquare, Cloud, Hexagon, Code2, ChevronRight, Binary, Layers } from 'lucide-react';
 import { DomainSkill } from '@/lib/profile/types';
 
 interface SkillsGridProps {
@@ -22,31 +22,6 @@ const getDomainIcon = (domainName: string) => {
     return <Hexagon className="w-6 h-6" />;
 };
 
-import React from 'react';
-
-interface LayersProps extends React.SVGProps<SVGSVGElement> {}
-
-function Layers(props: LayersProps) {
-    return (
-        <svg
-            {...props}
-            xmlns="http://www.w3.org/2000/svg"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        >
-            <polygon points="12 2 2 7 12 12 22 7 12 2" />
-            <polyline points="2 17 12 22 22 17" />
-            <polyline points="2 12 12 17 22 12" />
-        </svg>
-    );
-}
-
 
 export function SkillsGrid({ skillsByDomain = [] }: SkillsGridProps) {
     const [activeDomain, setActiveDomain] = useState<DomainSkill | null>(skillsByDomain[0] || null);
@@ -62,7 +37,9 @@ export function SkillsGrid({ skillsByDomain = [] }: SkillsGridProps) {
             // Replace word characters with random ASCII symbols for the hacker look
             initialScramble[skill] = skill.replace(/[a-zA-Z]/g, () => String.fromCharCode(33 + Math.floor(Math.random() * 90)));
         });
-        setScrambledSkills(initialScramble);
+        const timeout = setTimeout(() => {
+            setScrambledSkills(initialScramble);
+        }, 0);
 
         let iterations = 0;
         const maxIterations = 20;
@@ -89,7 +66,9 @@ export function SkillsGrid({ skillsByDomain = [] }: SkillsGridProps) {
                 if (allDone || iterations > maxIterations) {
                     clearInterval(interval);
                     // Force exact string at the end just in case
-                    activeDomain.skills.forEach(s => updated[s] = s);
+                    activeDomain.skills.forEach(s => {
+                        updated[s] = s;
+                    });
                 }
 
                 return updated;
@@ -97,7 +76,10 @@ export function SkillsGrid({ skillsByDomain = [] }: SkillsGridProps) {
             iterations += 1;
         }, 40);
 
-        return () => clearInterval(interval);
+        return () => {
+            clearTimeout(timeout);
+            clearInterval(interval);
+        };
     }, [activeDomain]);
 
     if (!skillsByDomain || skillsByDomain.length === 0) {

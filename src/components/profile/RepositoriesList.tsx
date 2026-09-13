@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RepositorySummary } from '@/lib/profile/types';
-import { Database, GitCompare, GitFork, AlertCircle, ShieldAlert, BadgeCheck, ExternalLink, CalendarDays, Star } from 'lucide-react';
+import { Database, ShieldAlert, BadgeCheck, ExternalLink, CalendarDays, Star } from 'lucide-react';
 const LANGUAGE_COLORS: Record<string, string> = {
     TypeScript: '#3178c6',
     JavaScript: '#f1e05a',
@@ -36,15 +36,6 @@ const LANGUAGE_COLORS: Record<string, string> = {
     Clojure: '#5881d8'
 };
 
-interface Repository {
-    name: string;
-    description: string;
-    stargazers_count: number;
-    language: string;
-    updated_at: string;
-    html_url: string;
-}
-
 interface RepositoriesListProps {
     repositories?: RepositorySummary[];
 }
@@ -57,7 +48,7 @@ function seededRandom(seedStr: string) {
         state += seedStr.charCodeAt(i);
     }
     return function () {
-        let x = Math.sin(state++) * 10000;
+        const x = Math.sin(state++) * 10000;
         return x - Math.floor(x);
     };
 }
@@ -259,7 +250,7 @@ export function RepositoriesList({ repositories = [] }: RepositoriesListProps) {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 <div>
                                                     <span className="text-text-1 font-bold">Traceon Assessment:</span><br />
-                                                    This repository generated a simulated score of {repo.metrics.isPassed ? <span className="text-emerald font-bold">PASS</span> : <span className="text-rose font-bold">FAIL</span>} against Traceon's basic quality heuristics.
+                                                    This repository generated a simulated score of {repo.metrics.isPassed ? <span className="text-emerald font-bold">PASS</span> : <span className="text-rose font-bold">FAIL</span>} against Traceon&apos;s basic quality heuristics.
                                                 </div>
                                                 <div>
                                                     <span className="text-text-1 font-bold">Risk Factors:</span><br />

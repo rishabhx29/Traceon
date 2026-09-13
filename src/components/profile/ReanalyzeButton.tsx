@@ -36,9 +36,10 @@ export function ReanalyzeButton({ username, initialRemainingLimit }: ReanalyzeBu
 
             // Trigger Next.js Server Component re-fetch/refresh
             router.refresh();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Error re-analyzing:', err);
-            setError(err.message || 'An error occurred during re-analysis');
+            const message = err instanceof Error ? err.message : 'An error occurred during re-analysis';
+            setError(message);
         } finally {
             setIsAnalyzing(false);
         }
