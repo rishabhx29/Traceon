@@ -23,10 +23,14 @@ const PROFILE_TYPING_LINES = [
 type AppFeatures = 'repo' | 'profile';
 type InputMode = 'url' | 'upload';
 
-export function HeroSection() {
+interface HeroSectionProps {
+    initialRepoUrl?: string;
+}
+
+export function HeroSection({ initialRepoUrl = '' }: HeroSectionProps) {
     const [appFeature, setAppFeature] = useState<AppFeatures>('repo');
     const [profileHandle, setProfileHandle] = useState('');
-    const [repoUrl, setRepoUrl] = useState('');
+    const [repoUrl, setRepoUrl] = useState(initialRepoUrl);
     const [mode, setMode] = useState<InputMode>('url');
     const [dragActive, setDragActive] = useState(false);
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -40,12 +44,41 @@ export function HeroSection() {
     const terminalRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Reset terminal when switching features
+    // Auto-launch analysis when a repo URL was passed via query param (e.g. from the home page command capsule)
     useEffect(() => {
-        setTerminalLines([]);
-        setCurrentLine(0);
-        setCurrentChar(0);
-    }, [appFeature]);
+        const prefill = initialRepoUrl.trim();
+        if (!prefill || isSubmitting) return;
+        // Validate the same GitHub URL shape the API enforces before auto-firing
+        if (!/^https:\/\/github\.com\/[\w-]+\/[\w-.]+(\.git)?$/.test(prefill)) return;
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                let localSessionId = localStorage.getItem('traceon_guest_session');
+                if (!localSessionId) {
+                    localSessionId = crypto.randomUUID();
+                    localStorage.setItem('traceon_guest_session', localSessionId);
+                }
+
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ repoUrl: prefill, sessionId: localSessionId }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || 'Error initializing analysis');
+                if (!cancelled) router.push(`/analyze?id=${data.repositoryId}`);
+            } catch {
+                if (!cancelled) setSubmitError('Failed to start analysis. Please try submitting manually.');
+            }
+        }, 400);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Terminal typing effect
     useEffect(() => {
@@ -210,11 +243,38 @@ export function HeroSection() {
                 <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
                     {/* Left — Copy */}
                     <div>
-                        {/* Badge */}
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-stroke bg-surface-1 mb-8 animate-fade-up relative group cursor-default">
-                            <span className="w-1.5 h-1.5 bg-emerald animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                            <span className="mono-label !text-[10px] sm:!text-xs tracking-widest">SYSTEM INITIALIZED</span>
-                            <ChevronRight className="w-3.5 h-3.5 text-text-3" />
+                        {/* Badge & Feature Switcher */}
+                        <div className="flex items-center gap-3 mb-8 flex-wrap">
+                            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm border border-stroke bg-surface-1 animate-fade-up relative group cursor-default">
+                                <span className="w-1.5 h-1.5 bg-emerald animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                                <span className="mono-label !text-[10px] sm:!text-xs tracking-widest">SYSTEM INITIALIZED</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-text-3" />
+                            </div>
+
+                            <div className="flex items-center p-0.5 rounded border border-stroke bg-surface-1 text-xs font-mono">
+                                <button
+                                    type="button"
+                                    onClick={() => setAppFeature('repo')}
+                                    className={`px-2.5 py-1 rounded-sm transition-all ${
+                                        appFeature === 'repo'
+                                            ? 'bg-emerald/20 text-emerald font-semibold'
+                                            : 'text-text-3 hover:text-text-1'
+                                    }`}
+                                >
+                                    Repo
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setAppFeature('profile')}
+                                    className={`px-2.5 py-1 rounded-sm transition-all ${
+                                        appFeature === 'profile'
+                                            ? 'bg-amber/20 text-amber font-semibold'
+                                            : 'text-text-3 hover:text-text-1'
+                                    }`}
+                                >
+                                    DNA
+                                </button>
+                            </div>
                         </div>
 
                         <h1 className="text-4xl sm:text-5xl lg:text-[4rem] font-display font-bold leading-[1.05] mb-6 animate-fade-up animate-delay-1 tracking-tighter">
@@ -247,6 +307,7 @@ export function HeroSection() {
                                     <div className="flex flex-col gap-2">
                                         <div className="flex items-center gap-2 p-1.5 rounded-sm bg-surface-0 border border-stroke focus-within:border-amber/50 transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
                                             <span className="pl-3 text-amber font-mono text-sm font-bold select-none">@</span>
+                                            <label htmlFor="profile-handle-input" className="sr-only">GitHub username to analyze</label>
                                             <input
                                                 type="text"
                                                 value={profileHandle}
@@ -306,6 +367,7 @@ export function HeroSection() {
                                                     <span className="pl-3 text-emerald font-mono text-sm select-none opacity-70">
                                                         $
                                                     </span>
+                                                    <label htmlFor="repo-url-input" className="sr-only">GitHub repository URL to analyze</label>
                                                     <input
                                                         type="url"
                                                         value={repoUrl}
@@ -324,7 +386,11 @@ export function HeroSection() {
                                                         {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Exec <ArrowRight className="w-3.5 h-3.5" /></>}
                                                     </button>
                                                 </div>
-                                                {submitError && <span className="text-xs text-rose font-mono pl-3">{submitError}</span>}
+                                                {submitError && (
+                                                    <span role="alert" aria-live="assertive" className="text-xs text-rose font-mono pl-3">
+                                                        {submitError}
+                                                    </span>
+                                                )}
                                             </div>
                                         </form>
                                     )}
@@ -401,7 +467,11 @@ export function HeroSection() {
                                                             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Analyze <ArrowRight className="w-3.5 h-3.5" /></>}
                                                         </button>
                                                     </div>
-                                                    {submitError && <span className="text-xs text-rose font-mono pl-3">{submitError}</span>}
+                                                    {submitError && (
+                                                        <span role="alert" aria-live="assertive" className="text-xs text-rose font-mono pl-3">
+                                                            {submitError}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
