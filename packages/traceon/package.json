@@ -1,0 +1,48 @@
+{
+  "name": "traceon-analyzer",
+  "version": "0.1.3",
+  "description": "Analyze any codebase into an interactive dependency graph — right from your terminal. Zero config, works offline.",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "traceon": "dist/cli.js"
+  },
+  "files": [
+    "dist/cli.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "homepage": "https://github.com/rishabhx29/Traceon",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rishabhx29/Traceon.git",
+    "directory": "packages/traceon"
+  },
+  "bugs": {
+    "url": "https://github.com/rishabhx29/Traceon/issues"
+  },
+  "keywords": [
+    "dependency-graph",
+    "code-analysis",
+    "ast",
+    "architecture",
+    "visualization",
+    "cli",
+    "static-analysis"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "get-tsconfig": "^4.13.6",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "esbuild": "^0.24.0"
+  }
+}
