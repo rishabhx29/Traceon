@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Package, X, ArrowRight, AlertTriangle, CheckCircle2, Boxes, Link2 } from 'lucide-react';
+import { X, ArrowRight, AlertTriangle, CheckCircle2, Boxes, Link2 } from 'lucide-react';
 
 interface WorkspacePackage {
     name: string;
@@ -207,7 +207,7 @@ export default function WorkspacePanel({
             <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
 
                 {/* Packages Tab */}
-                {activeTab === 'packages' && packageStats.map((pkg, i) => (
+                {activeTab === 'packages' && packageStats.map((pkg) => (
                     <button
                         key={pkg.name}
                         onClick={() => {

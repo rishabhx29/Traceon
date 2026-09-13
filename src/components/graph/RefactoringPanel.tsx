@@ -41,27 +41,33 @@ interface RefactoringPanelProps {
 
 export default function RefactoringPanel({ repoId, isOpen, onToggle, onHighlightNode }: RefactoringPanelProps) {
     const [data, setData] = useState<RefactorData | null>(null);
-    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'gods' | 'coupling'>('gods');
 
+    const loading = !data && !error;
+
     useEffect(() => {
         if (!isOpen || data) return;
-        setLoading(true);
-        setError(null);
+        let cancelled = false;
 
         fetch(`/api/refactor/${repoId}`)
             .then(res => res.json())
             .then(result => {
+                if (cancelled) return;
                 if (result.success) {
                     setData(result.data);
                 } else {
                     setError(result.message || 'Failed to analyze');
                 }
             })
-            .catch(() => setError('Network error'))
-            .finally(() => setLoading(false));
+            .catch(() => {
+                if (!cancelled) setError('Network error');
+            });
+
+        return () => {
+            cancelled = true;
+        };
     }, [isOpen, repoId, data]);
 
     if (!isOpen) return null;

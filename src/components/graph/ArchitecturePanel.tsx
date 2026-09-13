@@ -11,26 +11,32 @@ interface ArchitecturePanelProps {
 
 export default function ArchitecturePanel({ repoId, isOpen, onToggle }: ArchitecturePanelProps) {
     const [markdown, setMarkdown] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
 
+    const loading = !markdown && !error;
+
     useEffect(() => {
         if (!isOpen || markdown) return;
-        setLoading(true);
-        setError(null);
+        let cancelled = false;
 
         fetch(`/api/architecture/${repoId}`)
             .then(res => res.json())
             .then(data => {
+                if (cancelled) return;
                 if (data.success) {
                     setMarkdown(data.data.markdown);
                 } else {
                     setError(data.message || 'Failed to generate summary');
                 }
             })
-            .catch(() => setError('Network error'))
-            .finally(() => setLoading(false));
+            .catch(() => {
+                if (!cancelled) setError('Network error');
+            });
+
+        return () => {
+            cancelled = true;
+        };
     }, [isOpen, repoId, markdown]);
 
     const handleCopy = async () => {
@@ -116,7 +122,6 @@ function MarkdownRenderer({ content }: { content: string }) {
         });
     };
 
-    let currentSectionIdx = -1;
     let insideCollapsed = false;
 
     for (let i = 0; i < lines.length; i++) {
@@ -132,7 +137,6 @@ function MarkdownRenderer({ content }: { content: string }) {
         }
 
         if (line.startsWith('## ')) {
-            currentSectionIdx = i;
             insideCollapsed = collapsedSections.has(i);
             const title = line.substring(3);
             elements.push(

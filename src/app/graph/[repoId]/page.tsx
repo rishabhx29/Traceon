@@ -15,7 +15,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
-import { Loader2, ArrowLeft, FileText, Wrench, Boxes, TrendingUp } from 'lucide-react';
+import { Loader2, FileText, Wrench, Boxes, TrendingUp } from 'lucide-react';
 
 import CustomNode from '@/components/graph/CustomNode';
 import CustomEdge from '@/components/graph/CustomEdge';
@@ -564,7 +564,8 @@ export default function GraphPage() {
             nds.map((n) => {
                 const matchesSearch = !searchQuery || String(n.data.label || '').toLowerCase().includes(searchQuery.toLowerCase());
                 const matchesFilter = !filterType || String(n.data.nodeType || '') === filterType;
-                const visible = matchesSearch && matchesFilter;
+                const matchesPackage = !packageFilter || String(n.data.packageName || '') === packageFilter;
+                const visible = matchesSearch && matchesFilter && matchesPackage;
                 return {
                     ...n,
                     hidden: !visible,
@@ -573,7 +574,7 @@ export default function GraphPage() {
                 };
             })
         );
-    }, [searchQuery, filterType, isHeatmap, setNodes]);
+    }, [searchQuery, filterType, packageFilter, isHeatmap, setNodes]);
 
     const onNodeClick = useCallback(
         (_: React.MouseEvent, node: Node) => {

@@ -2,9 +2,9 @@
 
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { FileCode2, Box, Wrench, Layout, Settings, File } from 'lucide-react';
+import { FileCode2, Box, Wrench, Layout, Settings, File, type LucideIcon } from 'lucide-react';
 
-const TYPE_CONFIG: Record<string, { color: string; bg: string; border: string; icon: React.ElementType }> = {
+const TYPE_CONFIG: Record<string, { color: string; bg: string; border: string; icon: LucideIcon }> = {
     entry: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.35)', icon: Box },
     component: { color: '#8b5cf6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.35)', icon: Layout },
     utility: { color: '#06b6d4', bg: 'rgba(6,182,212,0.08)', border: 'rgba(6,182,212,0.35)', icon: Wrench },
@@ -120,8 +120,8 @@ function CustomNode({ data, selected }: { data: CustomNodeData; selected?: boole
 
             <div className="flex items-center gap-3 text-[10px]" style={{ color: '#94a3b8' }}>
                 <span>{data.loc} LOC</span>
-                <span>↓{data.inDegree}</span>
-                <span>↑{data.outDegree}</span>
+                <span>Γåô{data.inDegree}</span>
+                <span>Γåæ{data.outDegree}</span>
             </div>
 
             {data.packageName && (
