@@ -62,3 +62,7 @@ test*.ts
 
 # skills configuration
 skills-lock.json
+
+# traceon CLI package
+/packages/traceon/dist
+/packages/traceon/node_modules
